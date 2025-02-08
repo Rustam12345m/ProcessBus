@@ -1,0 +1,9 @@
+[submodule "3rdparty/dpdk"]
+	path = 3rdparty/dpdk
+	url = https://github.com/DPDK/dpdk.git
+[submodule "3rdparty/libiec61850"]
+	path = 3rdparty/libiec61850
+	url = https://github.com/mz-automation/libiec61850.git
+[submodule "3rdparty/googletest"]
+	path = 3rdparty/googletest
+	url = https://github.com/google/googletest.git
