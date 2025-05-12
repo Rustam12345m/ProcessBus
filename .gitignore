@@ -9,5 +9,7 @@ tmp/
 *.tar
 *.gz
 *.qcow2
+*.iso
+
 tags
 
