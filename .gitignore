@@ -1,4 +1,13 @@
+3rdparty/
+devices/orangepi3b/openwrt
 build/
 install/
 tmp/
+
+*.img
+*.zip
+*.tar
+*.gz
+*.qcow2
 tags
+
