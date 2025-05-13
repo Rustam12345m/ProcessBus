@@ -61,6 +61,8 @@ static void gen_cycle(rte_mempool *pool, uint16_t port_id,
     const unsigned BURST_SIZE = 32;
     rte_mbuf* mbufs[BURST_SIZE] = { 0 };
 
+    std::cout << "Start main loop\n";
+
     // Main cycle
     DPDK::CyclicStat workStat;
     workStat.MarkStartCycling();
@@ -88,8 +90,7 @@ static void gen_cycle(rte_mempool *pool, uint16_t port_id,
                         }
                     }
                 } else {
-                    int freeNum = rte_eth_tx_done_cleanup(port_id, queue_id, 0);
-                    (void)freeNum;
+                    rte_eth_tx_done_cleanup(port_id, queue_id, 0);
                     continue;
                 }
 
@@ -153,7 +154,7 @@ static void main_thread(int argc, char *argv[])
         }
     } catch (const std::exception &e) {
         std::cerr << "cxxopts: Error parsing options: " << e.what() << std::endl;
-        return;
+        throw;
     }
 
     // Create memory pool for GOOSEs
@@ -170,12 +171,15 @@ static void main_thread(int argc, char *argv[])
                             .Build();
 
     // Pin to CPU & RT priority
-    pin_thread_to_cpu(DEF_BUS_TX_CPU, DEF_PROCESS_PRIORITY);
+    /* pin_thread_to_cpu(DEF_BUS_TX_CPU, DEF_PROCESS_PRIORITY); */
+    set_thread_priority(DEF_GENERATOR_PRIORITY);
 
     // Start NIC port
     eth.Start();
+    if (!eth.WaitLink(10)) {
+        throw std::runtime_error("Link is still down after 10 sec...");
+    }
 
-    std::cout << "Start main loop\n";
     if (gooseNum > 0) {
         // GOOSE
         const unsigned DEF_GOOSE_ENTRIES = 16;
@@ -222,6 +226,9 @@ int main(int argc, char *argv[])
 
     if (rte_eth_dev_count_avail() == 0) {
         rte_exit(EXIT_FAILURE, "No available ports. Check port binding.\n");
+    }
+    if (rte_get_main_lcore() == 0) {
+        rte_exit(EXIT_FAILURE, "You can't use core 0 to generate/process BUSes!\n");
     }
 
     // Signals to finish processing

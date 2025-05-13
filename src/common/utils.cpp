@@ -1,5 +1,13 @@
 #include "utils.hpp"
 
+void set_thread_priority(int priority)
+{
+    sched_param param = {
+        .sched_priority = priority
+    };
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+}
+
 void pin_thread_to_cpu(int cpu, int priority)
 {
     pthread_t thread = pthread_self();

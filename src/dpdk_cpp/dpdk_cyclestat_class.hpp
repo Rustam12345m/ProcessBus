@@ -40,10 +40,10 @@ namespace DPDK
             m_totalProcessTicks += delta;
         }
 
-        inline double GetMaxLoadPerc() const {
+        inline double GetLoadPerc() const {
             return m_loadPerc;
         }
-        inline double GetMaxWaitPerc() const {
+        inline double GetWaitPerc() const {
             return m_waitPerc;
         }
         inline unsigned GetMaxProcUS() const {
@@ -54,10 +54,10 @@ namespace DPDK
         }
 
         friend std::ostream& operator<<(std::ostream &out, const CyclicStat &obj) {
-            out << "\tBunch proc(us): " << obj.GetMinProcUS() << "\n"
-                << "\tBunch proc(us): " << obj.GetMaxProcUS() << "\n"
-                << "\tLoad(%):        " << obj.GetMaxLoadPerc() << "% \n"
-                << "\tWaiting(%):     " << obj.GetMaxWaitPerc() << "%";
+            out << "\tMin(process): " << obj.GetMinProcUS() << " us\n"
+                << "\tMax(process): " << obj.GetMaxProcUS() << " us\n"
+                << "\tLoad:         " << obj.GetLoadPerc() << " %\n"
+                << "\tWaiting:      " << obj.GetWaitPerc() << " %";
             return out;
         }
 

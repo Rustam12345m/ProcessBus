@@ -13,10 +13,19 @@
 
 #include <signal.h>
 #include <atomic>
+#include <stdexcept>
 
-/**
- *
- */
+struct LCoreWorker
+{
+    rte_ring*   m_ring = nullptr;
+    unsigned    m_lcore = 0;
+    DPDK::CyclicStat m_workStat;
+
+    LCoreWorker(rte_ring *ring, unsigned lcore)
+        : m_ring(ring), m_lcore(lcore)
+    {}
+};
+
 struct Application
 {
     void ParseCmdOptions(int argc, char* argv[]) {
@@ -46,6 +55,7 @@ struct Application
             }
         } catch (const std::exception &e) {
             std::cerr << "cxxopts: Error parsing options: " << e.what() << std::endl;
+            throw;
         }
     }
 
@@ -110,6 +120,7 @@ public:
 
     // Runtime
     std::atomic_bool doWork = true;
+    std::vector< LCoreWorker > worker;
 } g_app;
 
 void signal_handler(int)
@@ -122,52 +133,94 @@ static void* stat_thread(void* args)
     #define BYTES_TO_MEGABITS(b)  ((b) * 8 / 1000000.0)
     #define BYTES_TO_MEGABYTES(b) ((b) / 1000000.0)
 
-    unsigned port_id = 0, interval_sec = 1, current_sec = 0;
+    unsigned port_id = 0, interval_sec = 2, current_sec = 0;
 
     while (g_app.doWork) {
-        rte_eth_stats stats_start, stats_end;
+        rte_eth_stats start, finish;
 
-        rte_eth_stats_get(port_id, &stats_start);
+        rte_eth_stats_get(port_id, &start);
         sleep(interval_sec); // Wait
-        ++current_sec;
-        rte_eth_stats_get(port_id, &stats_end);
+        rte_eth_stats_get(port_id, &finish);
+        current_sec += interval_sec;
 
         // Calculate RX and TX PPS/BPS
-        uint64_t rx_pps = (stats_end.ipackets - stats_start.ipackets) / interval_sec;
-        uint64_t tx_pps = (stats_end.opackets - stats_start.opackets) / interval_sec;
+        uint64_t rx_pps = (finish.ipackets - start.ipackets) / interval_sec;
+        uint64_t tx_pps = (finish.opackets - start.opackets) / interval_sec;
 
-        uint64_t rx_bps = (stats_end.ibytes - stats_start.ibytes) / interval_sec;
-        uint64_t tx_bps = (stats_end.obytes - stats_start.obytes) / interval_sec;
+        uint64_t rx_bps = (finish.ibytes - start.ibytes) / interval_sec;
+        uint64_t tx_bps = (finish.obytes - start.obytes) / interval_sec;
 
-        printf("\r\nStatistics: Port %d (interval: %d sec, current: %d sec):\n",
-               port_id, interval_sec, current_sec);
-
-        printf("\tRX-PPS: %" PRIu64 ", RX-BPS: %" PRIu64 " (%.2f Mbps, %.2f MBps)\n",
-                rx_pps, rx_bps,
-                BYTES_TO_MEGABITS(rx_bps),
-                BYTES_TO_MEGABYTES(rx_bps));
-
-        printf("\tTX-PPS: %" PRIu64 ", TX-BPS: %" PRIu64 " (%.2f Mbps, %.2f MBps)\n",
-                tx_pps, tx_bps,
-                BYTES_TO_MEGABITS(tx_bps),
-                BYTES_TO_MEGABYTES(tx_bps));
-
-        std::cout << "\tGOOSE RX:\n"
-                  << "\t\tRX: " << g_app.rxGoosePacketCnt << "\n"
-                  << "\t\tError: " << g_app.errGooseParserCnt << "\n"
-                  << "\t\tUnknown: " << g_app.unknownGooseCnt << "\n"
-                  << "\t\tNonGOOSE: " << g_app.nonGoosePacketCnt
+        std::cout << std::format(
+                        "\nStatistics: Port {} (interval: {} sec, current: {} sec):\n"
+                        "\tRX-PPS: {}, RX-BPS: {} ({:.2f} Mbps, {:.2f} MBps)\n"
+                        "\tTX-PPS: {}, TX-BPS: {} ({:.2f} Mbps, {:.2f} MBps)\n",
+                        port_id, interval_sec, current_sec,
+                        rx_pps, rx_bps, BYTES_TO_MEGABITS(rx_bps), BYTES_TO_MEGABYTES(rx_bps),
+                        tx_pps, tx_bps, BYTES_TO_MEGABITS(tx_bps), BYTES_TO_MEGABYTES(tx_bps)
+                     )
                   << std::endl;
 
         rte_eth_stats stats;
         if (rte_eth_stats_get(port_id, &stats) == 0) {
-            printf("\tRX-errors:  %" PRIu64 "\n", stats.ierrors);
-            printf("\tTX-errors:  %" PRIu64 "\n", stats.oerrors);
-            printf("\tRX-missed:  %" PRIu64 "\n", stats.imissed);
-            printf("\tRX-no-mbuf: %" PRIu64 "\n", stats.rx_nombuf);
+            std::cout << std::format(
+                            "\tRX-packets: {}\n"
+                            "\tTX-packets: {}\n"
+                            "\tRX-bytes:   {}\n"
+                            "\tTX-bytes:   {}\n"
+                            "\tRX-errors:  {}\n"
+                            "\tTX-errors:  {}\n"
+                            "\tRX-missed:  {}\n"
+                            "\tRX-no-mbuf: {}\n",
+                            stats.ipackets, stats.opackets, stats.ibytes, stats.obytes,
+                            stats.ierrors, stats.oerrors, stats.imissed, stats.rx_nombuf
+                         )
+                      << std::endl;
         }
+
+        std::cout << "\tGOOSE:\n"
+                  << "\t\tTotal:    " << g_app.rxGoosePacketCnt << "\n"
+                  << "\t\tError:    " << g_app.errGooseParserCnt << "\n"
+                  << "\t\tUnknown:  " << g_app.unknownGooseCnt << "\n"
+                  << "\t\tNonGOOSE: " << g_app.nonGoosePacketCnt
+                  << std::endl;
     }
     return NULL;
+}
+
+static int lcore_processor(void *arg)
+{
+    LCoreWorker *conf = reinterpret_cast< LCoreWorker* >(arg);
+    if (conf == nullptr) {
+        g_app.doWork = false;
+        std::cerr << "LCore: Config is NULL!" << std::endl;
+        return -1;
+    }
+
+    set_thread_priority(DEF_WORKER_PRIORITY);
+
+    const unsigned BURST_SIZE = 32;
+    rte_mbuf *bufs[BURST_SIZE] = {};
+    conf->m_workStat.MarkStartCycling();
+    while (g_app.doWork) {
+        uint16_t rxNum = rte_ring_dequeue_burst(conf->m_ring,
+                                                (void **)bufs,
+                                                BURST_SIZE,
+                                                NULL);
+        if (rxNum > 0) {
+            conf->m_workStat.MarkProcBegin();
+            for (uint16_t i=0;i<rxNum;++i) {
+                const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
+                const unsigned packetSize = rte_pktmbuf_pkt_len(bufs[i]);
+
+                g_app.ProcessGoosePacket(packet, packetSize);
+                /* rte_pktmbuf_free(bufs[i]); */
+            }
+            rte_pktmbuf_free_bulk(bufs, rxNum);
+            conf->m_workStat.MarkProcEnd();
+        }
+    }
+    conf->m_workStat.MarkFinishCycling();
+    return 0;
 }
 
 static void main_thread(int argc, char *argv[])
@@ -190,21 +243,48 @@ static void main_thread(int argc, char *argv[])
                             .Build();
 
     // Common information
+    /*
     DPDK::Info::display_lcore_info();
     DPDK::Info::display_eth_info();
     DPDK::Info::display_pools_info();
+    */
 
     // Statistics
     pthread_t statThHandle;
     pthread_create(&statThHandle, NULL, stat_thread, NULL);
 
     // Pin to CPU & RT priority
-    pin_thread_to_cpu(DEF_BUS_RX_CPU, DEF_PROCESS_PRIORITY);
+    /* pin_thread_to_cpu(DEF_BUS_RX_CPU, DEF_PROCESS_PRIORITY); */
+    set_thread_priority(DEF_PROCESS_PRIORITY);
+
+    // Workers
+    const unsigned WORKET_RING_SIZE = 4096;
+    unsigned lcore = 0, wIndex = 0;
+    g_app.worker.reserve(rte_lcore_count());
+    RTE_LCORE_FOREACH_WORKER(lcore) {
+        std::string ringName = "worker_ring_" + std::to_string(lcore);
+        rte_ring *ring = rte_ring_create(ringName.c_str(),
+                                         WORKET_RING_SIZE,
+                                         rte_socket_id(),
+                                         RING_F_SP_ENQ | RING_F_SC_DEQ);
+        if (ring == nullptr) {
+            throw std::runtime_error("Can't create ring for worker: " + ringName);
+        }
+
+        g_app.worker.push_back(LCoreWorker(ring, lcore));
+        rte_eal_remote_launch(lcore_processor, &g_app.worker[wIndex], lcore);
+        ++wIndex;
+    }
+    const unsigned workerNum = g_app.worker.size();
 
     // Start NIC port
     eth.Start();
+    if (!eth.WaitLink(10)) {
+        throw std::runtime_error("Link is still down after 10 sec...");
+    }
 
-    std::cout << "Start main loop\n";
+    std::cout << "Start main loop with workers: " << workerNum << std::endl;
+
     const unsigned BURST_SIZE = 64;
     rte_mbuf* bufs[BURST_SIZE] = { 0 };
 
@@ -221,14 +301,20 @@ static void main_thread(int argc, char *argv[])
 
                 uint16_t appid = 0;
                 if (is_goose(packet, packetSize, &appid)) {
-                    // TODO: Dispatch to lcores or process here
+                    if (workerNum > 0) {
+                        unsigned workerIdx = appid % workerNum;
+
+                        if (rte_ring_enqueue(g_app.worker[workerIdx].m_ring, bufs[i]) == 0) {
+                            continue;
+                        }
+                    }
+                    
+                    // Handling without lcores
                     g_app.ProcessGoosePacket(packet, packetSize);
                 } else {
                     // TODO: Dispatch to: Thread - Kernel(TAP)
                     ++g_app.nonGoosePacketCnt;
                 }
-
-                // Free the received mb
                 rte_pktmbuf_free(bufs[i]);
             }
 
@@ -238,12 +324,20 @@ static void main_thread(int argc, char *argv[])
     workStat.MarkFinishCycling();
 
     eth.Stop();
+    rte_eal_mp_wait_lcore();
     pthread_join(statThHandle, nullptr);
 
     for (const auto &src : g_app.gooseMap) {
         std::cout << "GOOSE: \n" << *src.second << std::endl;
     }
-    std::cout << "\nProcessing statistics:\n" << workStat << std::endl;
+
+    std::cout << "\nProcessing(main):\n" << workStat << std::endl;
+    for (const auto &w : g_app.worker) {
+        std::cout << "Worker: [" << w.m_lcore << "]\n"
+                  << w.m_workStat
+                  << std::endl;
+    }
+    std::cout << "Mempool: \n" << pool << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -256,8 +350,11 @@ int main(int argc, char *argv[])
     argc -= retval;
     argv += retval;
 
-    if (rte_eth_dev_count_avail()== 0) {
+    if (rte_eth_dev_count_avail() == 0) {
         rte_exit(EXIT_FAILURE, "No available ports. Please, check port binding.\n");
+    }
+    if (rte_get_main_lcore() == 0) {
+        rte_exit(EXIT_FAILURE, "You can't use core 0 to generate/process BUSes!\n");
     }
 
     // Signals to finish processing

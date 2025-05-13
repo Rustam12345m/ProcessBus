@@ -37,7 +37,7 @@ public:
     }
 
     std::string toString(char separator = ':') const {
-        return std::format("{:02x}{:c}{:02x}{:c}{:02x}{:c}{:02x}{:c}{:02x}{:c}{:02x}",
+        return std::format("{:02X}{:c}{:02X}{:c}{:02X}{:c}{:02X}{:c}{:02X}{:c}{:02X}",
                            m_mac[0], separator, m_mac[1], separator, m_mac[2], separator,
                            m_mac[3], separator, m_mac[4], separator, m_mac[5]);
     }

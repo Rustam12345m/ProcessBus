@@ -39,6 +39,12 @@ namespace DPDK
 
         inline rte_mempool* Get() { return m_pool; }
 
+        friend std::ostream& operator<<(std::ostream &out, const Mempool &obj) {
+            out << "\tAvailable(mbuf): " << rte_mempool_avail_count(obj.m_pool) << "\n"
+                << "\tInUse(mbuf):     " << rte_mempool_in_use_count(obj.m_pool) << "\n";
+            return out;
+        }
+
     private:
         rte_mempool* m_pool = nullptr;
     };

@@ -24,8 +24,9 @@ namespace DPDK
         Port& operator=(const Port&) = delete;
 
         ~Port() {
-            if (m_portID != 0xFFFF) {
-                rte_eth_dev_stop(m_portID);
+            if (rte_eth_dev_is_valid_port(m_portID)) {
+                Stop();
+
                 rte_eth_dev_close(m_portID);
                 m_portID = 0xFFFF;
             }
@@ -35,9 +36,13 @@ namespace DPDK
             if (rte_eth_dev_start(m_portID) != 0) {
                 throw std::runtime_error("Can't start port: " + std::to_string(m_portID));
             }
+            m_isStarted = true;
         }
         void Stop() {
-            rte_eth_dev_stop(m_portID);
+            if (m_isStarted) {
+                rte_eth_dev_stop(m_portID);
+                m_isStarted = false;
+            }
         }
 
         inline uint16_t GetID() const { return m_portID; }
@@ -60,6 +65,7 @@ namespace DPDK
 
     private:
         uint16_t m_portID = 0xFFFF;
+        bool     m_isStarted = false;
 
     friend class PortBuilder;
     };
@@ -80,6 +86,14 @@ namespace DPDK
 
         PortBuilder& SetPromisc(bool enable = true) {
             m_promiscMode = enable;
+            return *this;
+        }
+        PortBuilder& SetTimestamping(bool enable = true) {
+            m_timestamping = enable;
+            return *this;
+        }
+        PortBuilder& SetAllMulticast(bool enable = true) {
+            m_allMulticastMode = enable;
             return *this;
         }
 
@@ -201,7 +215,10 @@ namespace DPDK
             if (m_timestamping) {
 	            rte_eth_timesync_enable(m_portID);
             }
-            
+            if (m_allMulticastMode) {
+                rte_eth_allmulticast_enable(m_portID);
+            }
+
             return Port(m_portID);
         }
 
@@ -214,7 +231,8 @@ namespace DPDK
         uint16_t        m_rxDescNum = 1024,
                         m_txDescNum = 1024;
         bool            m_promiscMode = false,
-                        m_timestamping = false;
+                        m_timestamping = false,
+                        m_allMulticastMode = false;
 
         std::vector< rte_flow* > m_flows;
     };
