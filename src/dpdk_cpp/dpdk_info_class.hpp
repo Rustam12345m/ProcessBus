@@ -100,7 +100,7 @@ namespace DPDK
             rte_eth_xstat_name names[nb_xstats];
             rte_eth_xstats_get_names(port_id, names, nb_xstats);
             for (int i = 0; i < nb_xstats; i++) {
-                printf("\tName: %s, Value: %" PRIu64 "\n", names[i].name, xstats[i].value);
+                printf("\t%s, Value: %" PRIu64 "\n", names[i].name, xstats[i].value);
             }
         }
 
@@ -161,3 +161,4 @@ namespace DPDK
         }
     };
 }
+

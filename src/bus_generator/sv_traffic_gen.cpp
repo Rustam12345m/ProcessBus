@@ -6,9 +6,6 @@
 #include <inttypes.h>
 #include <stdexcept>
 
-/**
- * @note 
- */
 #define PLACEHOLDER             "1234"
 const char *SVID_PATTERN = "SVID" PLACEHOLDER;
 
@@ -44,7 +41,14 @@ void SVTrafficGen::InitIED(SVSourceIED &ied, unsigned idx)
 
 void SVTrafficGen::MakeSkeletonSV80()
 {
-    SVPublisher sv80 = SVPublisher_create(NULL, "lo");
+    CommParameters ethParams = {
+        .vlanPriority = 4,
+        .vlanId = 101,
+        .appId = 0x4000,
+        .dstAddress = { 0x01, 0x0C, 0xCD, 0x01, 0x00, 0x01 }
+    };
+
+    SVPublisher sv80 = SVPublisher_create(&ethParams, "lo");
     if (sv80) {
         SVPublisher_ASDU asdu = SVPublisher_addASDU(sv80, SVID_PATTERN, NULL, 1);
 
@@ -75,7 +79,14 @@ void SVTrafficGen::MakeSkeletonSV80()
 
 void SVTrafficGen::MakeSkeletonSV256()
 {
-    SVPublisher sv256 = SVPublisher_create(NULL, "lo");
+    CommParameters ethParams = {
+        .vlanPriority = 4,
+        .vlanId = 101,
+        .appId = 0x4000,
+        .dstAddress = { 0x01, 0x0C, 0xCD, 0x01, 0x00, 0x01 }
+    };
+
+    SVPublisher sv256 = SVPublisher_create(&ethParams, "lo");
     if (sv256) {
         SVPublisher_ASDU asdu[MAX_SV_ASDU_NUM]; // 9.2LE 256 points
         for (int i=0;i<MAX_SV_ASDU_NUM;++i) {
@@ -111,7 +122,7 @@ SVTrafficGen::TxUnitArray SVTrafficGen::CreateTxUnits(int pps)
 {
     std::vector< SVTrafficGen::TxSVUnit > units;
 
-    const unsigned BUNCH_SIZE = 32;
+    const unsigned BUNCH_SIZE = 64;
     units.reserve(pps);
     for (size_t i=0;i<pps;i++) {
         TxSVUnit unit;

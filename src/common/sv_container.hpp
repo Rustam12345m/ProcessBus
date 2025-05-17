@@ -3,6 +3,7 @@
 #include "mac_addr.hpp"
 
 #include <format>
+#include <iostream>
 #include <ostream>
 
 /**
@@ -18,10 +19,11 @@ struct SVStreamPassport
     std::string_view    svid;
 
     bool operator==(const SVStreamPassport &r) const {
-        return (appid == r.appid)
-                && (std::memcmp(dmac, r.dmac, sizeof(dmac)) == 0)
+        return (dmac == r.dmac)
+                && (appid == r.appid)
                 && (num == r.num)
-                && (goid == r.goid);
+                && (crev == r.crev)
+                && (svid == r.svid);
     }
 
     // Hash functor
@@ -30,16 +32,18 @@ struct SVStreamPassport
     }
 
     // Equality functor
-    bool operator()(SVStreamPassport &l, SVStreamPassport &r) const {
+    bool operator()(const SVStreamPassport &l, const SVStreamPassport &r) const {
         return (l == r);
     }
 
     friend std::ostream& operator<<(std::ostream &out, const SVStreamPassport &obj) {
-        out << obj.dmac << "\n"
-            << std::format("\tAPPID = {:04X}\n", obj.appid)
-            << "\nCRev = " << obj.crev << "\n"
-            << "\nNum = " << obj.num << "\n"
-            << "\tSVID = " << obj.svid << "\n";
+        out << "SVStreamPassport:\n"
+            << "\tDMAC =  " << obj.dmac << "\n"
+            << std::format(
+               "\tAPPID = {:04X}\n", obj.appid)
+            << "\tCRev =  " << obj.crev << "\n"
+            << "\tNum =   " << obj.num << "\n"
+            << "\tSVID =  " << obj.svid << "\n";
         return out;
     }
 };
@@ -51,4 +55,92 @@ struct SVStreamState
 {
     uint16_t smpCnt = 0;
 };
+
+class SVStreamSource
+{
+public:
+    using ptr = std::shared_ptr< SVStreamSource >;
+
+    SVStreamSource&    SetMAC(const MAC mac) {
+        m_dmac = mac;
+        return *this;
+    }
+    SVStreamSource&    SetAppID(uint16_t appid) {
+        m_appid = appid;
+        return *this;
+    }
+    SVStreamSource&    SetSVID(const std::string &svid) {
+        m_svid = svid;
+        return *this;
+    }
+    SVStreamSource&    SetCRev(uint32_t crev) {
+        m_crev = crev;
+        return *this;
+    }
+    SVStreamSource&    SetNumASDU(uint32_t num) {
+        m_numASDU = num;
+        return *this;
+    }
+
+    uint16_t        GetAppID() const {
+        return m_appid;
+    }
+    std::string     GetSVID() const {
+        return m_svid;
+    }
+    uint32_t        GetCRev() const {
+        return m_crev;
+    }
+
+    SVStreamPassport GetPassport() const {
+        SVStreamPassport pass;
+        pass.dmac = m_dmac;
+        pass.appid = m_appid;
+        pass.crev = m_crev;
+        pass.svid = m_svid;
+        pass.num = m_numASDU;
+        return pass;
+    }
+
+    inline void ProcessState(const SVStreamPassport &pass,
+                             const SVStreamState &state) {
+        if ((state.smpCnt != (m_smpCnt + 1)) && (state.smpCnt != 0)) {
+            ++m_errSmpCnt;
+            /*
+            std::cout << "Wrong smpCnt: " << m_smpCnt
+                      << " in packet " << state.smpCnt
+                      << "\n";
+            */
+        }
+        m_smpCnt = state.smpCnt;
+    }
+
+    friend std::ostream& operator<<(std::ostream &out, const SVStreamSource &obj) {
+        out << obj.GetPassport()
+            << "\nState:\n"
+            << "\tSmpCnt    = " << obj.m_smpCnt << "\n"
+            << "\tErrSeqCnt = " << obj.m_errSmpCnt << "\n";
+        return out;
+    }
+
+
+private:
+    // Settings
+    MAC         m_dmac;
+    uint16_t    m_appid = 0;
+    std::string m_svid;
+    uint32_t    m_crev = 0;
+    uint32_t    m_numASDU = 0;
+
+    // State
+    uint32_t    m_smpCnt = 0;
+    uint32_t    m_errSmpCnt = 0;
+};
+
+using SVContainer = std::unordered_map<
+                        SVStreamPassport,     /* Key type */
+                        SVStreamSource::ptr,  /* Value type */
+                        SVStreamPassport,     /* Custom hash operator */
+                        SVStreamPassport      /* Custom equality operator */
+                    >;
 

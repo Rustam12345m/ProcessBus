@@ -63,6 +63,15 @@ namespace DPDK
             return (link.link_status != 0);
         }
 
+        friend std::ostream& operator<<(std::ostream &out, Port &obj) {
+            rte_eth_dev_info devInfo = {};
+            if (rte_eth_dev_info_get(obj.m_portID, &devInfo) == 0) {
+                out << "\tMaxRxQueue = " << devInfo.max_rx_queues << "\n"
+                    << "\tMaxDescNum = " << devInfo.rx_desc_lim.nb_max << "\n";
+            }
+            return out;
+        }
+
     private:
         uint16_t m_portID = 0xFFFF;
         bool     m_isStarted = false;
@@ -72,7 +81,7 @@ namespace DPDK
 
     /**
      * @class PortBuilder
-     * @brief Create a new DPDK port class with managing options
+     * @brief Create a new DPDK port 
      */
     class PortBuilder
     {
@@ -103,9 +112,9 @@ namespace DPDK
             return *this;
         }
 
-        PortBuilder& SetDescriptors(uint16_t m_rxDescNum_, uint16_t m_txDescNum_) {
-            m_rxDescNum = m_rxDescNum_;
-            m_txDescNum = m_txDescNum_;
+        PortBuilder& SetDescriptors(uint16_t rx, uint16_t tx) {
+            m_rxDescNum = rx;
+            m_txDescNum = tx;
             return *this;
         }
 
@@ -197,8 +206,8 @@ namespace DPDK
             }
 
             for (uint16_t q=0;q<m_txQueueNum;++q) {
-		        rte_eth_txconf *txConf = &devInfo.default_txconf;
-        		txConf->offloads = m_ethConf.txmode.offloads;
+                rte_eth_txconf *txConf = &devInfo.default_txconf;
+                txConf->offloads = m_ethConf.txmode.offloads;
 
                 if (rte_eth_tx_queue_setup(m_portID,
                                            q,
@@ -213,7 +222,7 @@ namespace DPDK
                 rte_eth_promiscuous_enable(m_portID);
             }
             if (m_timestamping) {
-	            rte_eth_timesync_enable(m_portID);
+                rte_eth_timesync_enable(m_portID);
             }
             if (m_allMulticastMode) {
                 rte_eth_allmulticast_enable(m_portID);

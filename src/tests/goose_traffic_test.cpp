@@ -1,5 +1,5 @@
 #include "bus_generator/goose_traffic_gen.hpp"
-#include "bus_processor/goose_parser.hpp"
+#include "bus_processor/process_bus_parser.hpp"
 
 // GOOSE generation by libiec61850
 #include "mms_value.h"
@@ -20,10 +20,16 @@ public:
     {
         char port[8] = "";
         m_subscriber = GooseSubscriber_create(port, NULL);
+        if (m_subscriber == NULL) {
+            throw std::runtime_error("Can't create GooseSubscriber from libiec61850!");
+        }
         GooseSubscriber_setObserver(m_subscriber);
         GooseSubscriber_setListener(m_subscriber, GooseParserByLib::callback_handler, this);
 
         m_receiver = GooseReceiver_create();
+        if (m_receiver == NULL) {
+            throw std::runtime_error("Can't create GooseReceiver from libiec61850!");
+        }
         GooseReceiver_addSubscriber(m_receiver, m_subscriber);
     }
 
@@ -116,7 +122,7 @@ public:
                                                         dataSetValues,
                                                         buffer, MAX_PACKET_SIZE, 
                                                         &packetSize);
-            if (retval < 0) {
+            if (retval < 0 || packetSize == 0) {
                 throw std::runtime_error("Can't generate GOOSE with libiec61850"
                                          + std::to_string(retval));
                 return 0;
@@ -124,6 +130,8 @@ public:
 
             GoosePublisher_destroy(publisher);
             LinkedList_destroy(dataSetValues);
+        } else {
+            throw std::runtime_error("Can't create GoosePublisher from libiec61850!");
         }
         return packetSize;
     }
@@ -220,7 +228,7 @@ TEST(BusGenerator, CheckPacketsByLibiec61850)
     std::vector< uint8_t > buffer(MAX_PACKET_SIZE);
     memcpy(buffer.data(), gen.GetSkeletonBuffer(), gen.GetSkeletonSize());
 
-    auto units = gen.GetTxUnits();
+    auto &units = gen.GetTxUnits();
     for (const auto &unit : units) {
         for (size_t i=0;i<unit.blocks.size();++i) {
             auto &blk = unit.blocks[i];
@@ -230,7 +238,7 @@ TEST(BusGenerator, CheckPacketsByLibiec61850)
 
                 // Check the packet validity by libiec61850
                 int retval = gooseLibPaser.ParseGoose(buffer.data(), gen.GetSkeletonSize());
-                ASSERT_EQ(retval, 0);
+                ASSERT_EQ(retval, 0) << "Block = " << i << ", packet = " << j;
             }
         }
     }
@@ -254,7 +262,7 @@ TEST(GooseFastParser, BasicUsage)
                 .SetDataSet("DataSetName")
                 .MakePacket(packet);
     retval = parse_goose_packet(packet, size, passport, state);
-    ASSERT_EQ(retval, 0) << "Return value = " << retval;
+    ASSERT_EQ(retval, 0) << "Can't parse packet: Size = " << size;
 
     /* std::cout << passport; */
     ASSERT_EQ(passport.appid, goose.GetAppID()) << passport;

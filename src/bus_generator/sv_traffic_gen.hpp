@@ -52,7 +52,7 @@ public:
         *(uint32_t *)(packet + m_asduOffs[0][SV_SVID_OFFSET] + 4) = *(uint32_t *)ied.sID;
         *(uint16_t *)(packet + m_asduOffs[0][SV_SMP_CNT_OFFSET]) = RTE_STATIC_BSWAP16(ied.smpCnt);
 
-        ied.smpCnt = ied.smpCnt % m_freq;
+        ied.smpCnt = (ied.smpCnt + 1 < m_freq) ? (ied.smpCnt + 1) : 0;
         return m_skeletonSize;
     }
 
@@ -62,9 +62,9 @@ public:
         *(uint16_t *)(packet + m_appidOffset) = RTE_STATIC_BSWAP16((desc.idx + 1) & 0xFFFF);
         for (int i=0;i<MAX_SV_ASDU_NUM;++i) {
             *(uint32_t *)(packet + m_asduOffs[i][SV_SVID_OFFSET] + 4) = *(uint32_t *)ied.sID;
-
             *(uint16_t *)(packet + m_asduOffs[i][SV_SMP_CNT_OFFSET]) = RTE_STATIC_BSWAP16(ied.smpCnt);
-            ied.smpCnt = (ied.smpCnt + 1) % m_freq;
+
+            ied.smpCnt = (ied.smpCnt + 1 < m_freq) ? (ied.smpCnt + 1) : 0;
         }
 
         return m_skeletonSize;

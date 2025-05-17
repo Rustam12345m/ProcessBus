@@ -12,6 +12,9 @@ namespace DPDK
     class Mempool
     {
     public:
+        Mempool(const Mempool&) = delete;
+        Mempool& operator=(const Mempool&) = delete;
+
         Mempool(const std::string& name, unsigned num_mbufs, unsigned mbuf_cache_size,
                 unsigned mbuf_size = RTE_MBUF_DEFAULT_BUF_SIZE,
                 int socket_id = rte_socket_id())
@@ -26,16 +29,12 @@ namespace DPDK
                 throw std::runtime_error("Mempool creation failed: " + name);
             }
         }
-
         ~Mempool() {
             if (m_pool) {
                 rte_mempool_free(m_pool);
                 m_pool = nullptr;
             }
         }
-
-        Mempool(const Mempool&) = delete;
-        Mempool& operator=(const Mempool&) = delete;
 
         inline rte_mempool* Get() { return m_pool; }
 

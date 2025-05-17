@@ -2,6 +2,7 @@
 #include "dpdk_cpp/dpdk_cyclestat_class.hpp"
 #include "dpdk_cpp/dpdk_poolsetter_class.hpp"
 #include "dpdk_cpp/dpdk_mempool_class.hpp"
+#include "dpdk_cpp/dpdk_info_class.hpp"
 
 #include "goose_traffic_gen.hpp"
 #include "sv_traffic_gen.hpp"
@@ -13,7 +14,7 @@
 #include <signal.h>
 #include <atomic>
 
-std::atomic_bool g_doWork = true;
+volatile bool g_doWork = true;
 
 void signal_handler(int)
 {
@@ -67,7 +68,7 @@ static void gen_cycle(rte_mempool *pool, uint16_t port_id,
     DPDK::CyclicStat workStat;
     workStat.MarkStartCycling();
     uint64_t secStartTick = workStat.GetStartTick();
-    unsigned txUnitIdx = 0;
+    unsigned txUnitIdx = 0, cantSendCnt = 0;
     while (g_doWork) {
         workStat.MarkProcBegin();
         for (const auto &blk : txUnits[txUnitIdx].blocks) {
@@ -88,6 +89,7 @@ static void gen_cycle(rte_mempool *pool, uint16_t port_id,
                         for (uint16_t i=nb_tx;i<num;i++) {
                             rte_pktmbuf_free(mbufs[i]);
                         }
+                        cantSendCnt += num - nb_tx;
                     }
                 } else {
                     rte_eth_tx_done_cleanup(port_id, queue_id, 0);
@@ -115,6 +117,8 @@ static void gen_cycle(rte_mempool *pool, uint16_t port_id,
     workStat.MarkFinishCycling();
 
     std::cout << "\nProcessing statistics:\n" << workStat << std::endl;
+    std::cout << "\tCantSendCnt = " << cantSendCnt << std::endl;
+    /* DPDK::Info::display_eth_stats(port_id); */
 }
 
 static void main_thread(int argc, char *argv[])
@@ -158,11 +162,11 @@ static void main_thread(int argc, char *argv[])
     }
 
     // Create memory pool for GOOSEs
-    const unsigned MBUF_NUM = 32 * 1024, CACHE_NUM = 64;
+    const unsigned MBUF_NUM = 64 * 1024, CACHE_NUM = 64;
     DPDK::Mempool pool("bus_gen_pool", MBUF_NUM, CACHE_NUM);
 
     uint16_t port_id = 0, queue_id = 0;
-    const unsigned RX_DESC_NUM = 1 * 1024, TX_DESC_NUM = 4 * 1024;
+    const unsigned RX_DESC_NUM = 1 * 1024, TX_DESC_NUM = 8 * 1024;
     DPDK::Port eth = DPDK::PortBuilder(port_id)
                             .SetMemPool(pool.Get())
                             .AdjustQueues(1, 1)

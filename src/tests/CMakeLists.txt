@@ -7,8 +7,8 @@ add_executable(${TARGET_NAME}
     ../bus_generator/sv_traffic_gen.hpp
     ../bus_generator/sv_traffic_gen.cpp
 
-    ../bus_processor/goose_parser.hpp
-    ../bus_processor/goose_parser.cpp
+    ../bus_processor/process_bus_parser.hpp
+    ../bus_processor/process_bus_parser.cpp
 
     goose_traffic_test.cpp
     sv_traffic_test.cpp

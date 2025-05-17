@@ -173,9 +173,9 @@ private:
 };
 
 using GooseContainer = std::unordered_map<
-                                GoosePassport,      /* Key type */
-                                GooseSource::ptr,   /* Value type */
-                                GoosePassportHash,  /* Custom hash operator */
-                                GoosePassportEqual  /* Custom equality operator */
-                            >;
+                           GoosePassport,      /* Key type */
+                           GooseSource::ptr,   /* Value type */
+                           GoosePassportHash,  /* Custom hash operator */
+                           GoosePassportEqual  /* Custom equality operator */
+                       >;
 
