@@ -9,7 +9,7 @@ BUILD_DIR="$REPO_DIR/build/"
 INSTALL_DIR="$REPO_DIR/install/"
 DPDK_DIR="$REPO_DIR/3rdparty/dpdk/"
 DPDK_INSTALL="$DPDK_DIR/build/install/"
-DPDK_PKGCONFIG="$DPDK_INSTALL/lib/pkgconfig/"
+DPDK_PKGCONFIG="$DPDK_INSTALL/lib/x86_64-linux-gnu/pkgconfig/"
 
 function build_dpdk()
 {
@@ -20,11 +20,10 @@ function build_dpdk()
     meson setup build \
         --prefix="$DPDK_DIR/build/install/" \
         -Dmachine=atom \
-        -Ddefault_library=static \
         -Dbuildtype=release \
         -Dmax_numa_nodes=1 \
         -Ddisable_drivers=all \
-        -Denable_drivers=net_e1000,net_ixgbe,net_ice,net_af_xdp,net_tap,net_virtio,net_ring,net_bpf
+        -Denable_drivers=net_e1000,net_igc,net_ixgbe,net_ice,net_af_xdp,net_tap,net_virtio,net_ring,net_bpf,net_vhost
 
     # --cross-file $REPO_DIR/devices/orangepi3b/meson-rk3566-toolchain.cross
 
@@ -32,9 +31,9 @@ function build_dpdk()
     ninja -C build
     ninja -C build install
 
-    # Hack to forst static linking
-    rm -rf "$DPDK_DIR/build/install/lib"/*.so
-    rm -rf "$DPDK_DIR3rdparty/dpdk/build/install/lib"/*.so.*
+    # Hack to force static linking
+    rm -rf "$DPDK_DIR/build/install/lib"/x86_64-linux-gnu/*.so
+    rm -rf "$DPDK_DIR3rdparty/dpdk/build/install/lib"/x86_64-linux-gnu/*.so.*
 
     # Check it
     export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:$DPDK_PKGCONFIG"

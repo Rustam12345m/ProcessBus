@@ -12,5 +12,5 @@ REMOTE_DIR=/home/user/pbus/
 
 $REPO_DIR/ci/build.sh
 
-sshpass -p 123 scp -P 666 -r "$INSTALL_DIR/bin/" "${USER}@${HOST}:${REMOTE_DIR}"
+sshpass -p 123 scp -r "$INSTALL_DIR/bin/" "${USER}@${HOST}:${REMOTE_DIR}"
 
