@@ -25,6 +25,27 @@ namespace
             static_cast< size_t >(length)
         };
     }
+
+    inline uint32_t decodeAsn1UNumber(const uint8_t* buffer, size_t size)
+    {
+        switch (size) {
+        case 1:
+            return buffer[0];
+        case 2:
+            return (static_cast<uint32_t>(buffer[0]) << 8)
+                    | buffer[1];
+        case 3:
+            return (static_cast<uint32_t>(buffer[0]) << 16)
+                    | (static_cast<uint32_t>(buffer[1]) << 8)
+                    | buffer[2];
+        case 4:
+            return (static_cast<uint32_t>(buffer[0]) << 24)
+                    | (static_cast<uint32_t>(buffer[1]) << 16)
+                    | (static_cast<uint32_t>(buffer[2]) << 8)
+                    | buffer[3];
+        }
+        return 0;
+    }
 }
 
 #define NET_TO_CPU_U16(x)       RTE_STATIC_BSWAP16(*(uint16_t *)(x))
@@ -89,20 +110,20 @@ int parse_goose_packet(const uint8_t *buffer, int size,
             }
             break;
         case 0x85:
-            state.stNum = NET_TO_CPU_U32(buffer + pos);
+            state.stNum = decodeAsn1UNumber(buffer + pos, itemSize); // NET_TO_CPU_U32(buffer + pos);
             break;
         case 0x86:
-            state.sqNum = NET_TO_CPU_U32(buffer + pos);
+            state.sqNum = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
             break;
         case 0x87: /* Simulation */
             break;
         case 0x88: /* CRev */
-            passport.crev = NET_TO_CPU_U32(buffer + pos);
+            passport.crev = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
             break;
         case 0x89: /* NdsCom */
             break;
         case 0x8a: /* Num DataSet entries */
-            passport.num = NET_TO_CPU_U32(buffer + pos);
+            passport.num = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
             break;
         case 0xab: /* allData */
             break;
