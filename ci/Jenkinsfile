@@ -1,0 +1,36 @@
+pipeline {
+	agent any
+
+	stages {
+		stage('Build Docker Image') {
+			steps {
+				dir('ci') {
+					script {
+						echo "Building docker image..."
+						//docker.build('pbus_debian_sdk:latest', '-f Dockerfile.debian .')
+					}
+				}
+			}
+		}
+		stage('Build Software') {
+			agent {
+				docker {
+					image 'pbus_debian_sdk:latest'
+					reuseNode true
+				}
+			}
+			steps {
+				dir('ci') {
+					sh 'echo "Building package..."'
+					sh './build.sh'
+				}
+			}
+		}
+		stage('Archive') {
+			steps {
+				sh 'tar -czf install.tar.gz -C install .'
+				archiveArtifacts artifacts: 'install.tar.gz', fingerprint: true
+			}
+		}
+	}
+}
