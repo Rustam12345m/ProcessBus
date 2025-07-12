@@ -152,4 +152,3 @@ SVTrafficGen::TxUnitArray SVTrafficGen::CreateTxUnits(int pps)
     }
     return std::move(units);
 }
-

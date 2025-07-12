@@ -141,4 +141,3 @@ void GooseTrafficGen::GenerateTxUnits(unsigned pps)
         m_units.push_back(std::move(unit));
     }
 }
-

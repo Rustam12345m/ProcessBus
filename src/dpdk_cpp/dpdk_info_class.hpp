@@ -75,6 +75,36 @@ namespace DPDK
             std::cout << std::endl;
         }
 
+        static void display_eth_info(uint16_t port_id)
+        {
+            rte_eth_dev_info dev;
+            if (rte_eth_dev_info_get(port_id, &dev) != 0) {
+                std::cerr << "Port ID = " << port_id << "\n"
+                          << "\tCan't get information!\n";
+                return;
+            }
+
+            std::cout << "Port\n"
+                      << "\tIfIndex: " << dev.if_index << "\n"
+                      << "\tDriver: " << std::string(dev.driver_name) << "\n"
+                      << "\tMTU: " << dev.min_mtu << ", " << dev.max_mtu << "\n"
+                      << "\tMaxQueue: RX = " << dev.max_rx_queues << ", TX = " << dev.max_tx_queues << "\n"
+                      << "\tMax(bufsize): " << dev.max_rx_bufsize << "\n"
+                      << "\tMax(pktlen): " << dev.max_rx_pktlen << "\n"
+                      << std::hex
+                      << "\tCapa(RX): 0x" << dev.rx_offload_capa << "\n"
+                      << "\tCapa(TX): 0x" << dev.tx_offload_capa << "\n"
+                      << "\tRSS algos: 0x" << dev.rss_algo_capa << "\n"
+                      << "\tFlow offloads: 0x" << dev.flow_type_rss_offloads << "\n"
+                      << "\tSpeed(capa): 0x" << dev.speed_capa << "\n"
+                      << std::dec
+                      << "\tRX descriptors: Min = " << dev.rx_desc_lim.nb_min
+                                      << ", Max = " << dev.rx_desc_lim.nb_max << "\n"
+                      << "\tTX descriptors: Min = " << dev.tx_desc_lim.nb_min
+                                      << ", Max = " << dev.tx_desc_lim.nb_max << "\n"
+                      << std::endl;
+        }
+
         static void display_eth_stats(uint16_t port_id)
         {
             rte_eth_stats stats;

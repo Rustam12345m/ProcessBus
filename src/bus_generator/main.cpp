@@ -52,7 +52,7 @@ template<
     size_t (GenClass::*Amend)(uint8_t *packet, const typename GenClass::Desc &desc)
             = &GenClass::AmendPacket
 >
-static void gen_cycle(rte_mempool *pool, uint16_t port_id,
+static void gen_process(rte_mempool *pool, uint16_t port_id,
                         uint16_t queue_id, GenClass &gen)
 {
     typename GenClass::TxUnitArray &txUnits = gen.GetTxUnits();
@@ -161,7 +161,7 @@ static void main_thread(int argc, char *argv[])
         throw;
     }
 
-    // Create memory pool for GOOSEs
+    // Memory pool for skeletons
     const unsigned MBUF_NUM = 64 * 1024, CACHE_NUM = 64;
     DPDK::Mempool pool("bus_gen_pool", MBUF_NUM, CACHE_NUM);
 
@@ -171,12 +171,10 @@ static void main_thread(int argc, char *argv[])
                             .SetMemPool(pool.Get())
                             .AdjustQueues(1, 1)
                             .SetDescriptors(RX_DESC_NUM, TX_DESC_NUM)
-                            .SetPromisc()
                             .Build();
 
-    // Pin to CPU & RT priority
-    /* pin_thread_to_cpu(DEF_BUS_TX_CPU, DEF_PROCESS_PRIORITY); */
-    set_thread_priority(DEF_GENERATOR_PRIORITY);
+    // Thread identity, CPU core by DPDK's command
+    set_thread_name("main");
 
     // Start NIC port
     eth.Start();
@@ -191,14 +189,14 @@ static void main_thread(int argc, char *argv[])
         DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
                 .FillPackets(pool.Get());
 
-        gen_cycle< GooseTrafficGen >(pool.Get(), port_id, queue_id, gen);
+        gen_process< GooseTrafficGen >(pool.Get(), port_id, queue_id, gen);
     } else if (sv80Num > 0) {
         // SV 80 points
         SVTrafficGen gen(sv80Num, SV_TYPE::SV80);
         DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
                 .FillPackets(pool.Get());
 
-        gen_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV80 >(
+        gen_process< SVTrafficGen, &SVTrafficGen::AmendPacketSV80 >(
             pool.Get(), port_id, queue_id, gen
         );
     } else if (sv256Num > 0) {
@@ -207,7 +205,7 @@ static void main_thread(int argc, char *argv[])
         DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
                 .FillPackets(pool.Get());
 
-        gen_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV256 >(
+        gen_process< SVTrafficGen, &SVTrafficGen::AmendPacketSV256 >(
             pool.Get(), port_id, queue_id, gen
         );
     } else {
@@ -219,6 +217,10 @@ static void main_thread(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    // Signals to finish processing
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
+
     // Initialize the Environment Abstraction Layer (EAL)
     int retval = rte_eal_init(argc, argv);
     if (retval < 0) {
@@ -235,14 +237,11 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "You can't use core 0 to generate/process BUSes!\n");
     }
 
-    // Signals to finish processing
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
-
     // Packet generator
     try {
         main_thread(argc, argv);
     } catch (const std::exception &exp) {
+        g_doWork = false;
         std::cerr << "Exception: " << exp.what() << std::endl;
     }
 
