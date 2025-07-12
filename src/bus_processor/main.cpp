@@ -338,7 +338,6 @@ static void main_thread(int argc, char *argv[])
                             .SetMemPool(pool.Get())
                             .AdjustQueues(1, 1)
                             .SetDescriptors(RX_DESC_NUM, TX_DESC_NUM)
-                            .SetPromisc()
                             .Build();
 
     std::cout << eth << std::endl;
@@ -379,8 +378,11 @@ static void main_thread(int argc, char *argv[])
     const unsigned workerNum = g_app.m_worker.size();
 
     // Start NIC port
+    eth.SetAllMulticast();
     eth.Start();
     if (!eth.WaitLink(10)) {
+        g_app.m_doWork = false;
+
         throw std::runtime_error("Link is still down after 10 sec...");
     }
 

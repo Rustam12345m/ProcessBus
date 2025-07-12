@@ -27,6 +27,13 @@ namespace DPDK
             if (rte_eth_dev_is_valid_port(m_portID)) {
                 Stop();
 
+                for (rte_flow *flow : m_flows) {
+                    rte_flow_error error;
+                    if (rte_flow_destroy(m_portID, flow, &error) < 0) {
+                        std::cerr << std::string(error.message) << std::endl;
+                    }
+                }
+
                 rte_eth_dev_close(m_portID);
                 m_portID = 0xFFFF;
             }
@@ -47,6 +54,22 @@ namespace DPDK
 
         inline uint16_t GetID() const { return m_portID; }
 
+        void SetPromisc(bool enable = true) {
+            if (enable) {
+                rte_eth_promiscuous_enable(m_portID);
+            } else {
+                rte_eth_promiscuous_disable(m_portID);
+            }
+        }
+
+        void SetAllMulticast(bool enable = true) {
+            if (enable) {
+                rte_eth_allmulticast_enable(m_portID);
+            } else {
+                rte_eth_allmulticast_disable(m_portID);
+            }
+        }
+
         bool WaitLink(unsigned sec) {
             rte_eth_link link;
             for (unsigned i=0;i<sec;++i) {
@@ -63,6 +86,72 @@ namespace DPDK
             return (link.link_status != 0);
         }
 
+        void AddVLAN_Flow(uint16_t vlan_id, uint16_t queue_id) {
+            rte_flow_attr attr = { .ingress = 1 };
+
+            rte_flow_item_eth eth_spec = { .type = rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN) };
+            rte_flow_item_eth eth_mask = { .type = 0xFFFF };
+
+            rte_flow_item_vlan vlan_spec = { .tci = rte_cpu_to_be_16(vlan_id) };
+            rte_flow_item_vlan vlan_mask = { .tci = 0xFFFF };
+
+            rte_flow_item pattern[] = {
+                { RTE_FLOW_ITEM_TYPE_ETH, &eth_spec, &eth_mask },
+                { RTE_FLOW_ITEM_TYPE_VLAN, &vlan_spec, &vlan_mask },
+                { RTE_FLOW_ITEM_TYPE_END, nullptr, nullptr },
+            };
+
+            rte_flow_action_queue queue = { .index = queue_id };
+            rte_flow_action actions[] = {
+                { RTE_FLOW_ACTION_TYPE_QUEUE, &queue },
+                { RTE_FLOW_ACTION_TYPE_END, nullptr },
+            };
+
+            rte_flow_error error = {};
+            if (rte_flow_validate(m_portID, &attr, pattern, actions, &error) != 0) {
+                throw std::runtime_error("VLAN flow rule is invalid: " + std::string(error.message));
+            }
+
+            rte_flow* flow = rte_flow_create(m_portID, &attr, pattern, actions, &error);
+            if (flow != nullptr) {
+                m_flows.push_back(flow);
+            } else {
+                throw std::runtime_error("Can't create VLAN flow: " + std::string(error.message));
+            }
+        }
+
+        void AddEthTypeFlow(uint16_t eth_type, uint16_t queue_id) {
+            rte_flow_attr attr = { .priority=1, .ingress=1 };
+
+            rte_flow_item_eth eth_spec = {
+                .type = rte_cpu_to_be_16(eth_type),  // GOOSE | SV
+            };
+            rte_flow_item pattern[] = {
+                { RTE_FLOW_ITEM_TYPE_ETH },
+                { RTE_FLOW_ITEM_TYPE_VLAN, NULL },
+                { RTE_FLOW_ITEM_TYPE_ETH, &eth_spec },
+                { RTE_FLOW_ITEM_TYPE_END }
+            };
+
+            rte_flow_action_queue queue = { .index = queue_id };
+            rte_flow_action actions[] = {
+                { .type = RTE_FLOW_ACTION_TYPE_QUEUE, .conf = &queue },
+                RTE_FLOW_ACTION_TYPE_END,
+            };
+
+            rte_flow_error error = {};
+            if (rte_flow_validate(m_portID, &attr, pattern, actions, &error) != 0) {
+                throw std::runtime_error("EthType flow rute is invalid: " + std::string(error.message));
+            }
+
+            rte_flow* flow = rte_flow_create(m_portID, &attr, pattern, actions, &error);
+            if (flow != nullptr) {
+                m_flows.push_back(flow);
+            } else {
+                throw std::runtime_error("Can't create Proto flow: " + std::string(error.message));
+            }
+        }
+
         friend std::ostream& operator<<(std::ostream &out, Port &obj) {
             rte_eth_dev_info devInfo = {};
             if (rte_eth_dev_info_get(obj.m_portID, &devInfo) == 0) {
@@ -75,6 +164,7 @@ namespace DPDK
     private:
         uint16_t m_portID = 0xFFFF;
         bool     m_isStarted = false;
+        std::vector< rte_flow* > m_flows;
 
     friend class PortBuilder;
     };
@@ -93,19 +183,6 @@ namespace DPDK
             return *this;
         }
 
-        PortBuilder& SetPromisc(bool enable = true) {
-            m_promiscMode = enable;
-            return *this;
-        }
-        PortBuilder& SetTimestamping(bool enable = true) {
-            m_timestamping = enable;
-            return *this;
-        }
-        PortBuilder& SetAllMulticast(bool enable = true) {
-            m_allMulticastMode = enable;
-            return *this;
-        }
-
         PortBuilder& AdjustQueues(uint16_t rx, uint16_t tx) {
             m_rxQueueNum = rx;
             m_txQueueNum = tx;
@@ -115,37 +192,6 @@ namespace DPDK
         PortBuilder& SetDescriptors(uint16_t rx, uint16_t tx) {
             m_rxDescNum = rx;
             m_txDescNum = tx;
-            return *this;
-        }
-
-        PortBuilder& AddVLanFlow(uint16_t vlan_id, uint16_t queue_id) {
-            rte_flow_attr attr = { .ingress = 1 };
-            
-            rte_flow_item_eth eth_spec = { .type = rte_cpu_to_be_16(RTE_ETHER_TYPE_VLAN) };
-            rte_flow_item_eth eth_mask = { .type = 0xFFFF };
-
-            rte_flow_item_vlan vlan_spec = { .tci = rte_cpu_to_be_16(vlan_id) };
-            rte_flow_item_vlan vlan_mask = { .tci = 0xFFFF };
-
-            rte_flow_action_queue queue = { .index = queue_id };
-            rte_flow_action actions[] = {
-                { RTE_FLOW_ACTION_TYPE_QUEUE, &queue },
-                { RTE_FLOW_ACTION_TYPE_END, nullptr },
-            };
-
-            rte_flow_item pattern[] = {
-                { RTE_FLOW_ITEM_TYPE_ETH, &eth_spec, &eth_mask },
-                { RTE_FLOW_ITEM_TYPE_VLAN, &vlan_spec, &vlan_mask },
-                { RTE_FLOW_ITEM_TYPE_END, nullptr, nullptr },
-            };
-
-            rte_flow_error error;
-            rte_flow* flow = rte_flow_create(m_portID, &attr, pattern, actions, &error);
-            if (flow != nullptr) {
-                m_flows.push_back(flow);
-            } else {
-                throw std::runtime_error("Can't create VLAN flow" + std::string(error.message));
-            }
             return *this;
         }
 
@@ -218,16 +264,9 @@ namespace DPDK
                 }
             }
 
-            if (m_promiscMode) {
-                rte_eth_promiscuous_enable(m_portID);
-            }
             if (m_timestamping) {
                 rte_eth_timesync_enable(m_portID);
             }
-            if (m_allMulticastMode) {
-                rte_eth_allmulticast_enable(m_portID);
-            }
-
             return Port(m_portID);
         }
 
@@ -239,11 +278,7 @@ namespace DPDK
                         m_txQueueNum = 0;
         uint16_t        m_rxDescNum = 1024,
                         m_txDescNum = 1024;
-        bool            m_promiscMode = false,
-                        m_timestamping = false,
-                        m_allMulticastMode = false;
-
-        std::vector< rte_flow* > m_flows;
+        bool            m_timestamping = false;
     };
 }
 
