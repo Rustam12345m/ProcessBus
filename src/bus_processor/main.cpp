@@ -13,7 +13,6 @@
 
 #include <signal.h>
 #include <atomic>
-#include <stdexcept>
 
 enum BUS_PROTO_TYPE
 {
@@ -160,9 +159,14 @@ struct Application
                     ++m_rxGoosePktCnt;
                 } else {
                     ++m_rxUnknownGooseCnt;
+
                     /*
-                       std::cout << "Received unknown GOOSE:\n"
-                       << pass << state << std::endl;
+                    std::cout << "Received unknown GOOSE: " << retval << "\n"
+                              << "PacketLen = " << packetSize << "\n"
+                              << pass
+                              << state
+                              << std::endl;
+                    displayPacketAsArray(packet, packetSize);
                     */
                 }
             } else {
@@ -229,6 +233,9 @@ static void* stat_thread(void* args)
 
     unsigned port_id = 0, interval_sec = 2, current_sec = 0;
 
+    set_thread_name("statistics");
+    pin_thread_to_cpu(0, 1);
+
     while (g_app.m_doWork) {
         rte_eth_stats start, finish;
 
@@ -285,6 +292,26 @@ static void* stat_thread(void* args)
     return NULL;
 }
 
+static void* signal_thread(void*)
+{
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGTERM);
+
+    set_thread_name("signal_thread");
+
+    while (true) {
+        int sig = 0;
+        if (sigwait(&set, &sig) == 0) {
+            if (sig == SIGINT || sig == SIGTERM) {
+                g_app.m_doWork = false;
+            }
+        }
+    }
+    return nullptr;
+}
+
 static int lcore_processor(void *arg)
 {
     LCoreWorker *conf = reinterpret_cast< LCoreWorker* >(arg);
@@ -294,7 +321,8 @@ static int lcore_processor(void *arg)
         return -1;
     }
 
-    set_thread_priority(DEF_WORKER_PRIORITY);
+    // CPU core by DPDK's cmd
+    /* set_thread_priority(DEF_WORKER_PRIORITY); */
 
     const unsigned BURST_SIZE = 32;
     rte_mbuf *bufs[BURST_SIZE] = {};
@@ -324,6 +352,9 @@ static int lcore_processor(void *arg)
 
 static void main_thread(int argc, char *argv[])
 {
+    // Thread identification
+    set_thread_name("main");
+
     // App's options
     g_app.Init(argc, argv);
 
@@ -352,10 +383,6 @@ static void main_thread(int argc, char *argv[])
     // Statistics
     pthread_t statThHandle;
     pthread_create(&statThHandle, NULL, stat_thread, NULL);
-
-    // Pin to CPU & RT priority
-    /* pin_thread_to_cpu(DEF_BUS_RX_CPU, DEF_PROCESS_PRIORITY); */
-    set_thread_priority(DEF_PROCESS_PRIORITY);
 
     // Workers
     const unsigned WORKET_RING_SIZE = 16 * 1024;
@@ -459,6 +486,17 @@ static void main_thread(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    // block signals in all threads
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &set, nullptr);
+
+    // start signal-handling thread
+    pthread_t sigthread;
+    pthread_create(&sigthread, nullptr, signal_thread, nullptr);
+
     int retval = rte_eal_init(argc, argv);
     if (retval < 0) {
         rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
@@ -474,14 +512,11 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "You can't use core 0 to generate/process BUSes!\n");
     }
 
-    // Signals to finish processing
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
-
     // Packet receiver
     try {
         main_thread(argc, argv);
     } catch (const std::exception &exp) {
+        g_app.m_doWork = false;
         std::cerr << "Exception: " << exp.what() << std::endl;
     }
 

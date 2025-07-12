@@ -1,6 +1,6 @@
 #pragma once
 
-#define DEF_WORKER_PRIORITY         60
+#define DEF_WORKER_PRIORITY         90
 #define DEF_PROCESS_PRIORITY        90
 #define DEF_GENERATOR_PRIORITY      90
 

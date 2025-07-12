@@ -63,6 +63,7 @@ static void gen_process(rte_mempool *pool, uint16_t port_id,
     rte_mbuf* mbufs[BURST_SIZE] = { 0 };
 
     std::cout << "Start main loop\n";
+    /* set_thread_priority(DEF_GENERATOR_PRIORITY); */
 
     // Main cycle
     DPDK::CyclicStat workStat;
