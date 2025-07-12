@@ -43,23 +43,25 @@ function(setup_dpdk TARGET_NAME)
         PRIVATE
         -Wl,--whole-archive
         ${DPDK_STATIC_LIBRARIES}
-        -lrte_net_ixgbe      # NIC's PMD
+        -lrte_mempool_ring   # 
+        -lrte_bus_pci        # PCI bus driver
+        -lrte_bus_vdev       # 
+        -lrte_net_virtio     # NIC's PMD
         -lrte_net_e1000      #
         -lrte_net_igc        #
+        -lrte_net_ixgbe      # 
         -lrte_net_i40e       #
         -lrte_net_af_xdp     #
-        -lrte_bus_pci        # PCI bus driver
-        -lrte_mempool_ring   # Required for mempool
-        -lrte_bus_vdev
-        # -lrte_net_ring       #
-        # -lrte_net_tap        #
-        # -lrte_net_virtio     #
-        # -lrte_net_af_packet  #
+        -lrte_net_af_packet  #
+        -lrte_net_ring       #
+        -lrte_net_tap        #
+        -lrte_net_vhost
         -Wl,--no-whole-archive
         pcap
         elf
         bpf
         xdp
+        numa
     )
 endfunction()
 

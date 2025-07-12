@@ -10,7 +10,7 @@ USER=user
 HOST=192.168.21.2
 REMOTE_DIR=/home/user/pbus/
 
-$REPO_DIR/ci/build.sh
+$REPO_DIR/ci/build.sh --rebuild
 
 sshpass -p 123 scp -r "$INSTALL_DIR/bin/" "${USER}@${HOST}:${REMOTE_DIR}"
 
