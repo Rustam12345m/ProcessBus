@@ -154,7 +154,7 @@ GenApplication::GenApplication(int argc, char *argv[])
     }
 }
 
-void GenApplication::run(StopVarType &doWork)
+void GenApplication::Run(StopVarType &doWork)
 {
     // Memory pool for skeletons
     DPDK::Mempool pool("bus_gen_pool", MBUF_NUM, CACHE_NUM);

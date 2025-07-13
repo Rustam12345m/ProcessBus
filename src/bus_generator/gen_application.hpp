@@ -11,9 +11,13 @@ using StopVarType = volatile bool;
 class GenApplication
 {
 public:
+    // Non-copyable
+    GenApplication(const GenApplication&) = delete;
+    GenApplication& operator=(const GenApplication&) = delete;
+
     GenApplication(int argc, char *argv[]);
 
-    void run(StopVarType &doWork);
+    void Run(StopVarType &doWork);
 
 private:
     unsigned m_gooseNum = 0,

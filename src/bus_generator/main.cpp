@@ -5,9 +5,6 @@
 
 #include <poll.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <sys/signalfd.h>
-#include <sys/timerfd.h>
 
 #include <format>
 #include <thread>
@@ -15,43 +12,13 @@
 
 volatile bool g_doWork = true;
 
-static int setup_signalfd()
-{
-    sigset_t mask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGTERM);
-    sigprocmask(SIG_BLOCK, &mask, NULL);
-
-    int fd = signalfd(-1, &mask, SFD_NONBLOCK);
-    if (fd < 0) {
-        std::cerr << "Can't create Signal FD" << std::endl;
-        abort();
-    }
-    return fd;
-}
-
-static int setup_timerfd(int sec = 1)
-{
-    int fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if (fd < 0) {
-        std::cerr << "Can't create Timer FD" << std::endl;
-        abort();
-    }
-
-    itimerspec its = {};
-    its.it_interval.tv_sec = sec;
-    its.it_value.tv_sec = sec;
-    timerfd_settime(fd, 0, &its, NULL);
-    return fd;
-}
-
 static void* auxiliary_thread()
 {
-    set_thread_name("signal_thread");
+    set_thread_name("auxiliary_thread");
+    pin_thread_to_cpu(0, 1);
 
-    int signalFD = setup_signalfd();
-    int timerFD = setup_timerfd();
+    int signalFD = create_signalfd();
+    int timerFD = create_timerfd();
 
     struct pollfd fds[2] = {
         { signalFD, POLLIN, 0 },
@@ -121,7 +88,7 @@ int main(int argc, char *argv[])
     try {
         GenApplication app(argc, argv);
 
-        app.run(g_doWork);
+        app.Run(g_doWork);
     } catch (const std::exception &exp) {
         std::cerr << "Exception: " << exp.what() << std::endl;
         g_doWork = false;
