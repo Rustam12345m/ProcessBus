@@ -5,7 +5,7 @@
 
 namespace
 {
-    inline int decodeAsn1Length(const uint8_t* buffer, size_t& pos)
+    inline int decode_asn1_len(const uint8_t* buffer, size_t& pos)
     {
         int lenByte = buffer[pos++];
         if (lenByte & 0x80) {
@@ -18,15 +18,7 @@ namespace
         return lenByte;
     }
 
-    inline std::string_view makeStringView(const uint8_t* data, int length)
-    {
-        return {
-            reinterpret_cast< const char* >(data),
-            static_cast< size_t >(length)
-        };
-    }
-
-    inline uint32_t decodeAsn1UNumber(const uint8_t* buffer, size_t size)
+    inline uint32_t decode_asn1_number(const uint8_t* buffer, size_t size)
     {
         switch (size) {
         case 1:
@@ -45,6 +37,14 @@ namespace
                     | buffer[3];
         }
         return 0;
+    }
+
+    inline std::string_view make_stringview(const uint8_t* data, int length)
+    {
+        return {
+            reinterpret_cast< const char* >(data),
+            static_cast< size_t >(length)
+        };
     }
 }
 
@@ -79,29 +79,29 @@ int parse_goose_packet(const uint8_t *buffer, int size,
     if (buffer[pos++] != 0x61) {
         return -3;
     }
-    int pduSize = decodeAsn1Length(buffer, pos);
+    int pduSize = decode_asn1_len(buffer, pos);
 
     bool found_gocbref = false, found_dataset = false, found_goid = false;
     while (pos < size) {
         uint8_t tag = buffer[pos++];
-        int itemSize = decodeAsn1Length(buffer, pos);
+        int itemSize = decode_asn1_len(buffer, pos);
         if (pos + itemSize > size || itemSize == 0) {
             return -3;
         }
 
         switch (tag) {
         case 0x80: /* gocbRef */
-            passport.gocbref = makeStringView(buffer + pos, itemSize);
+            passport.gocbref = make_stringview(buffer + pos, itemSize);
             found_gocbref = true;
             break;
         case 0x81: /* timeAllowedToLive */
             break;
         case 0x82: /* DatSet */
-            passport.dataset = makeStringView(buffer + pos, itemSize);
+            passport.dataset = make_stringview(buffer + pos, itemSize);
             found_dataset = true;
             break;
         case 0x83: /* GoID */
-            passport.goid = makeStringView(buffer + pos, itemSize);
+            passport.goid = make_stringview(buffer + pos, itemSize);
             found_goid = true;
             break;
         case 0x84:
@@ -110,20 +110,20 @@ int parse_goose_packet(const uint8_t *buffer, int size,
             }
             break;
         case 0x85:
-            state.stNum = decodeAsn1UNumber(buffer + pos, itemSize); // NET_TO_CPU_U32(buffer + pos);
+            state.stNum = decode_asn1_number(buffer + pos, itemSize);
             break;
         case 0x86:
-            state.sqNum = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
+            state.sqNum = decode_asn1_number(buffer + pos, itemSize);
             break;
         case 0x87: /* Simulation */
             break;
         case 0x88: /* CRev */
-            passport.crev = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
+            passport.crev = decode_asn1_number(buffer + pos, itemSize);
             break;
         case 0x89: /* NdsCom */
             break;
         case 0x8a: /* Num DataSet entries */
-            passport.num = decodeAsn1UNumber(buffer + pos, itemSize); //NET_TO_CPU_U32(buffer + pos);
+            passport.num = decode_asn1_number(buffer + pos, itemSize);
             break;
         case 0xab: /* allData */
             break;
@@ -131,12 +131,12 @@ int parse_goose_packet(const uint8_t *buffer, int size,
         case 0x31: // SET
             for (size_t end = pos + itemSize; pos < end;) {
                 uint8_t innerTag = buffer[pos++];
-                pos += decodeAsn1Length(buffer, pos);
+                pos += decode_asn1_len(buffer, pos);
             }
             continue;
         case 0xA0: // Context-specific 0
         case 0xA1: // Context-specific 1
-            pos += decodeAsn1Length(buffer, pos);
+            pos += decode_asn1_len(buffer, pos);
             continue;
         default:
             break;
@@ -204,13 +204,12 @@ int parse_sv_packet(const uint8_t *buffer, int size,
 
         switch (tag) {
         case 0x80: // svID
-            passport.svid =  makeStringView(buffer + pos, length);
+            passport.svid =  make_stringview(buffer + pos, length);
             break;
         case 0x82: // smpCnt
             state.smpCnt = NET_TO_CPU_U16(buffer + pos);
             break;
         case 0x83: // confRev
-            /* passport.crev = (buffer[pos] << 24) | (buffer[pos + 1] << 16) | (buffer[pos + 2] << 8) | buffer[pos + 3]; */
             passport.crev = NET_TO_CPU_U32(buffer + pos);
             break;
         case 0x84: // refrTm
