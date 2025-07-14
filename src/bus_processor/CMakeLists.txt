@@ -1,11 +1,14 @@
 set(TARGET_NAME bus_processor)
 
 add_executable(${TARGET_NAME}
-    process_bus_parser.hpp
-    process_bus_parser.cpp
-
     ../common/utils.hpp
     ../common/utils.cpp
+
+    process_bus_parser.hpp
+    # process_bus_parser.cpp
+
+    rx_application.hpp
+    rx_application.cpp
 
     main.cpp
 )
