@@ -18,7 +18,7 @@ namespace
 {
     inline unsigned get_appid(const uint8_t* buffer)
     {
-        return (*(uint16_t *)(buffer + 18));
+        return RTE_STATIC_BSWAP16(*(uint16_t *)(buffer + 18));
     }
 
     /**
