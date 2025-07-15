@@ -1,7 +1,7 @@
 #include "gen_application.hpp"
 
+#include "common/shared_defs.hpp"
 #include "dpdk_cpp/dpdk_port_class.hpp"
-#include "dpdk_cpp/dpdk_cyclestat_class.hpp"
 #include "dpdk_cpp/dpdk_poolsetter_class.hpp"
 #include "dpdk_cpp/dpdk_mempool_class.hpp"
 #include "dpdk_cpp/dpdk_info_class.hpp"
@@ -39,13 +39,19 @@ static void display_tx_units_info(TxUnitArray &txUnits)
               << std::endl;
 }
 
+struct TxCycleConfig
+{
+    rte_mempool* pool = nullptr;
+    uint16_t     nicPortID = 0;
+    uint16_t     nicQueueID = 0;
+};
+
 template<
     typename GenClass,
     size_t (GenClass::*Amend)(uint8_t *packet, const typename GenClass::Desc &desc)
         = &GenClass::AmendPacket
 >
-static void tx_packets_cycle(rte_mempool *pool, uint16_t nicPortID, uint16_t nicQueueID,
-                             GenClass &gen, StopVarType &doWork)
+static void tx_packets_cycle(TxCycleConfig &conf, GenAppStat &stat, GenClass &gen, StopVarType &doWork)
 {
     typename GenClass::TxUnitArray &txUnits = gen.GetTxUnits();
     if (txUnits.empty()) {
@@ -56,21 +62,19 @@ static void tx_packets_cycle(rte_mempool *pool, uint16_t nicPortID, uint16_t nic
     std::cout << "Start main loop\n";
     /* set_thread_priority(DEF_GENERATOR_PRIORITY); */
 
-    DPDK::CyclicStat workStat;
-    uint64_t secStartTick = workStat.GetStartTick();
-    unsigned txUnitIdx = 0, cantSendCnt = 0;
-
     // Main cycle
+    unsigned txUnitIdx = 0;
     rte_mbuf* mbufs[BURST_SIZE] = { 0 };
-    workStat.MarkStartCycling();
+    stat.procStat.MarkStartCycling();
+    uint64_t secStartTick = DPDK::Clocks::get_current_ticks();
     while (doWork) {
-        workStat.MarkProcBegin();
+        stat.procStat.MarkProcBegin();
         for (const auto &blk : txUnits[txUnitIdx].blocks) {
             unsigned count = blk.packets.size(), sendNum = 0;
             while (sendNum < count) {
                 unsigned num = ((count - sendNum) >= BURST_SIZE) ? BURST_SIZE
                                                                  : (count - sendNum);
-                if (rte_pktmbuf_alloc_bulk(pool, mbufs, num) == 0) {
+                if (rte_pktmbuf_alloc_bulk(conf.pool, mbufs, num) == 0) {
                     for (size_t i=0;i<num;++i) {
                         uint8_t *packet = rte_pktmbuf_mtod(mbufs[i], uint8_t *);
 
@@ -78,22 +82,22 @@ static void tx_packets_cycle(rte_mempool *pool, uint16_t nicPortID, uint16_t nic
                         mbufs[i]->data_len = mbufs[i]->pkt_len;
                     }
 
-                    uint16_t nb_tx = rte_eth_tx_burst(nicPortID, nicQueueID, mbufs, num);
+                    uint16_t nb_tx = rte_eth_tx_burst(conf.nicPortID, conf.nicQueueID, mbufs, num);
                     if (nb_tx < num) {
                         for (uint16_t i=nb_tx;i<num;i++) {
                             rte_pktmbuf_free(mbufs[i]);
                         }
-                        cantSendCnt += num - nb_tx;
+                        stat.errSendCnt += num - nb_tx;
                     }
                 } else {
-                    rte_eth_tx_done_cleanup(nicPortID, nicQueueID, 0);
+                    rte_eth_tx_done_cleanup(conf.nicPortID, conf.nicQueueID, 0);
                     continue;
                 }
 
                 sendNum += num;
             }
         }
-        workStat.MarkProcEnd();
+        stat.procStat.MarkProcEnd();
 
         txUnitIdx = (txUnitIdx + 1) % txUnits.size();
         if (txUnitIdx == 0) {
@@ -108,10 +112,8 @@ static void tx_packets_cycle(rte_mempool *pool, uint16_t nicPortID, uint16_t nic
             );
         }
     }
-    workStat.MarkFinishCycling();
+    stat.procStat.MarkFinishCycling();
 
-    std::cout << "\nProcessing statistics:\n" << workStat << std::endl;
-    std::cout << "\tCantSendCnt = " << cantSendCnt << std::endl;
     /* DPDK::Info::display_eth_stats(nicPortID); */
 }
 
@@ -154,8 +156,22 @@ GenApplication::GenApplication(int argc, char *argv[])
     }
 }
 
+void GenApplication::DisplayStatistic()
+{
+    std::cout << "\nProcessing statistics:\n"
+              << m_stat.procStat
+              << "\n\tCantSendCnt = " << m_stat.errSendCnt
+              << std::endl;
+}
+
 void GenApplication::Run(StopVarType &doWork)
 {
+    // DPDK settings
+    const unsigned MBUF_NUM = 256 * 1024,
+                   CACHE_NUM = 64,
+                   RX_DESC_NUM = 128,
+                   TX_DESC_NUM = 63 * 1024;
+
     // Memory pool for skeletons
     DPDK::Mempool pool("bus_gen_pool", MBUF_NUM, CACHE_NUM);
 
@@ -172,39 +188,42 @@ void GenApplication::Run(StopVarType &doWork)
         throw std::runtime_error("Link is still down after 10 sec...");
     }
 
+    TxCycleConfig conf{pool.Get(), port.GetID(), nicQueueID};
+
     // Main cycle
     if (m_gooseNum > 0) {
         // GOOSE
         const unsigned DEF_GOOSE_ENTRIES = 16;
         GooseTrafficGen gen(m_gooseNum, m_gooseSendFreq, DEF_GOOSE_ENTRIES);
-        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
-                .FillPackets(pool.Get());
 
-        tx_packets_cycle< GooseTrafficGen >(
-            pool.Get(), port.GetID(), nicQueueID, gen, doWork
-        );
+        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
+                        .FillPackets(pool.Get());
+
+        // Generate cycle with GOOSE packets
+        tx_packets_cycle< GooseTrafficGen >(conf, m_stat, gen, doWork);
     } else if (m_sv80Num > 0) {
         // SV 80 points
         SVTrafficGen gen(m_sv80Num, SV_TYPE::SV80);
-        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
-                .FillPackets(pool.Get());
 
-        tx_packets_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV80 >(
-            pool.Get(), port.GetID(), nicQueueID, gen, doWork
-        );
+        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
+                        .FillPackets(pool.Get());
+
+        // Generate cycle with SV packets
+        tx_packets_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV80 >(conf, m_stat, gen, doWork);
     } else if (m_sv256Num > 0) {
         // SV 256 points
         SVTrafficGen gen(m_sv256Num, SV_TYPE::SV256);
-        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
-                .FillPackets(pool.Get());
 
-        tx_packets_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV256 >(
-            pool.Get(), port.GetID(), nicQueueID, gen, doWork
-        );
+        DPDK::PoolSetter(gen.GetSkeletonBuffer(), gen.GetSkeletonSize())
+                        .FillPackets(pool.Get());
+
+        // Generate cycle with SV packets
+        tx_packets_cycle< SVTrafficGen, &SVTrafficGen::AmendPacketSV256 >(conf, m_stat, gen, doWork);
     } else {
         std::cerr << "You have to specify GOOSE or SV to generate!\n";
     }
 
     port.Stop();
+    DisplayStatistic();
 }
 

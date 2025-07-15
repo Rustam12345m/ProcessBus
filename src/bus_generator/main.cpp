@@ -14,7 +14,7 @@ volatile bool g_doWork = true;
 
 static void* auxiliary_thread()
 {
-    set_thread_name("auxiliary_thread");
+    set_thread_name("aux_thread");
     pin_thread_to_cpu(0, 1);
 
     int signalFD = create_signalfd();
@@ -78,11 +78,11 @@ int main(int argc, char *argv[])
         rte_exit(EXIT_FAILURE, "You can't use core 0 to generate/process BUSes!\n");
     }
 
-    // Thread identity, CPU core by DPDK's command
-    set_thread_name("main");
-
     // Start auxiliary thread: signals & statistics
     std::thread auxThread(auxiliary_thread);
+
+    // Thread identity, CPU core by DPDK's command
+    set_thread_name("main");
 
     // Packet generator
     try {
