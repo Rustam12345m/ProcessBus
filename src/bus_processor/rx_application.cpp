@@ -74,10 +74,11 @@ namespace
 
                     /*
                     std::cout << "Received unknown GOOSE: " << retval << "\n"
-                            << "PacketLen = " << size << "\n"
-                            << pass
-                            << state
-                            << std::endl;
+                              << "PacketLen = " << size << "\n"
+                              << pass
+                              << "\n"
+                              << state
+                              << std::endl;
                     display_packet_as_array(packet, size);
                     */
                 }
@@ -112,6 +113,7 @@ namespace
         }
     }
 
+
     int lcore_processor(void *arg)
     {
         PipelineProcessor *conf = reinterpret_cast< PipelineProcessor* >(arg);
@@ -125,14 +127,14 @@ namespace
         /* set_thread_priority(DEF_WORKER_PRIORITY); */
 
         rte_mbuf *bufs[BURST_SIZE] = {};
-        conf->m_workStat.MarkStartCycling();
+        conf->m_procStat.MarkStartCycling();
         while (g_doWork) {
             uint16_t rxNum = rte_ring_sc_dequeue_burst(conf->m_ring,
                                                        (void **)bufs,
                                                        BURST_SIZE,
                                                        nullptr);
             if (rxNum > 0) {
-                conf->m_workStat.MarkProcBegin();
+                conf->m_procStat.MarkProcBegin();
                 for (uint16_t i=0;i<rxNum;++i) {
                     const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
                     const unsigned packetSize = rte_pktmbuf_pkt_len(bufs[i]);
@@ -143,10 +145,10 @@ namespace
                     pipeline(*conf->m_app, bt, packet, packetSize);
                 }
                 rte_pktmbuf_free_bulk(bufs, rxNum);
-                conf->m_workStat.MarkProcEnd();
+                conf->m_procStat.MarkProcEnd();
             }
         }
-        conf->m_workStat.MarkFinishCycling();
+        conf->m_procStat.MarkFinishCycling();
         return 0;
     }
 
@@ -165,14 +167,14 @@ namespace
         /* set_thread_priority(DEF_PROCESS_PRIORITY); */
 
         // Main cycle
-        DPDK::CyclicStat workStat;
+        DPDK::CyclicStat procStat;
 
-        workStat.MarkStartCycling();
+        procStat.MarkStartCycling();
         rte_mbuf* bufs[BURST_SIZE] = { 0 };
         while (g_doWork) {
             uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, bufs, BURST_SIZE);
             if (rxNum > 0) {
-                workStat.MarkProcBegin();
+                procStat.MarkProcBegin();
 
                 for (unsigned i=0;i<rxNum;++i) {
                     const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
@@ -194,12 +196,12 @@ namespace
                     rte_pktmbuf_free(bufs[i]);
                 }
 
-                workStat.MarkProcEnd();
+                procStat.MarkProcEnd();
             }
         }
-        workStat.MarkFinishCycling();
+        procStat.MarkFinishCycling();
 
-        std::cout << "Processing(main): \n" << workStat
+        std::cout << "Processing(main): \n" << procStat
                   << std::endl;
     }
 
@@ -208,12 +210,12 @@ namespace
         const unsigned WORKER_RING_SIZE = 16 * 1024;
 
         // Pipeline workers
-        unsigned lcore = 0, wIndex = 0;
         std::vector< PipelineProcessor > pipelineWorker;
         pipelineWorker.reserve(rte_lcore_count());
 
+        unsigned lcore = 0, wIndex = 0;
         RTE_LCORE_FOREACH_WORKER(lcore) {
-            std::string ringName = "lcore_thread" + std::to_string(lcore);
+            std::string ringName = "lcore_" + std::to_string(lcore);
             rte_ring *ring = rte_ring_create(ringName.c_str(),
                                              WORKER_RING_SIZE,
                                              rte_socket_id(),
@@ -222,7 +224,7 @@ namespace
                 throw std::runtime_error("Can't create ring for pipelineWorker: " + ringName);
             }
 
-            pipelineWorker.emplace_back(ring, &app, lcore);
+            pipelineWorker.push_back(PipelineProcessor(ring, &app, lcore));
             rte_eal_remote_launch(lcore_processor, &pipelineWorker[wIndex], lcore);
             ++wIndex;
         }
@@ -237,55 +239,57 @@ namespace
             throw std::runtime_error("Link is still down after 10 sec...");
         }
 
-        std::cout << "Start main loop with pipelineWorkers: " << workerNum << std::endl;
+        std::cout << "Start main loop with workers: " << workerNum << std::endl;
         /* set_thread_priority(DEF_PROCESS_PRIORITY); */
 
-        // Workers
-        rte_ring* WRings[RTE_MAX_LCORE] = {};
-        for (int i=0;i<workerNum;++i) {
-            WRings[i] = pipelineWorker[i].m_ring;
-        }
-        rte_mbuf* WorkerBufs[RTE_MAX_LCORE][BURST_SIZE] = {};
-        unsigned WorkerBufsSize[BURST_SIZE] = {};
+        // Workers' queues
+        struct {
+            rte_mbuf* buff[BURST_SIZE] = {};
+            unsigned  num = 0;
+
+            inline void Put(rte_mbuf *buf) {
+                buff[num] = buf;
+                ++num;
+            }
+        } workerQueue[RTE_MAX_LCORE] = {};
 
         // Main cycle
-        DPDK::CyclicStat workStat;
-        workStat.MarkStartCycling();
-
+        DPDK::CyclicStat procStat;
+        procStat.MarkStartCycling();
         rte_mbuf* bufs[BURST_SIZE] = { 0 };
         while (g_doWork) {
             uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, bufs, BURST_SIZE);
             if (rxNum > 0) {
-                workStat.MarkProcBegin();
+                procStat.MarkProcBegin();
 
                 for (unsigned i=0;i<rxNum;++i) {
                     const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
 
                     unsigned appid = get_appid(packet);
-                    unsigned workerIdx = appid & (workerNum - 1);
-                    WorkerBufs[workerIdx][WorkerBufsSize[workerIdx]] = bufs[i];
-                    ++WorkerBufsSize[workerIdx];
+                    unsigned idx = appid & (workerNum - 1);
+
+                    workerQueue[idx].Put(bufs[i]);
                 }
                 for (unsigned i=0;i<workerNum;++i) {
-                    if (WorkerBufsSize[i] > 0) {
-                        rte_ring_sp_enqueue_burst(WRings[i],
-                                (void * const *)WorkerBufs[i],
-                                WorkerBufsSize[i],
-                                NULL);
-                        WorkerBufsSize[i] = 0;
+                    if (workerQueue[i].num > 0) {
+                        rte_ring_sp_enqueue_burst(pipelineWorker[i].m_ring,
+                                                  (void * const *)workerQueue[i].buff,
+                                                  workerQueue[i].num,
+                                                  NULL);
+                        workerQueue[i].num = 0;
                     }
                 }
 
-                workStat.MarkProcEnd();
+                procStat.MarkProcEnd();
             }
         }
-        workStat.MarkFinishCycling();
+        procStat.MarkFinishCycling();
 
-        std::cout << "Processing(main): \n" << workStat
+        std::cout << "Processing(main): \n" << procStat
                   << std::endl;
         for (const auto &w : pipelineWorker) {
             std::cout << "Worker: [" << w.m_lcore << "]\n"
-                      << w.m_workStat << "\n"
+                      << w.m_procStat << "\n"
                       << "\tNoFreeDesc = " << w.m_noFreeDesc << "\n"
                       << std::endl;
         }
@@ -438,9 +442,10 @@ void RX_Application::DisplayStatistic(unsigned interval_sec)
 
 void RX_Application::Run(StopVarType &doWork)
 {
-    const unsigned MBUF_NUM = 64 * 1024,
+    // DPDK settings
+    const unsigned MBUF_NUM = 512 * 1024,
                    CACHE_NUM = 64,
-                   RX_DESC_NUM = 8 * 1024,
+                   RX_DESC_NUM = 63 * 1024,
                    TX_DESC_NUM = 128;
 
     // Create memory pool
@@ -485,10 +490,12 @@ void RX_Application::Run(StopVarType &doWork)
     rte_eal_mp_wait_lcore();
 
     for (const auto &src : m_gooseMap) {
-        std::cout << "GOOSE: \n" << *src.second << std::endl;
+        GooseSource::ptr g = src.second;
+        std::cout << std::format("GOOSE[{}]: \n", g->GetAppID()) << *g << std::endl;
     }
     for (const auto &src : m_svMap) {
-        std::cout << "SV: \n" << *src.second << std::endl;
+        SVStreamSource::ptr s = src.second;
+        std::cout << std::format("SV[{}]: \n", s->GetAppID()) << *s << std::endl;
     }
     std::cout << "Mempool: \n" << pool << std::endl;
 }

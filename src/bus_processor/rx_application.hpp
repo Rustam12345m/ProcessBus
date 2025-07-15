@@ -32,7 +32,7 @@ struct PipelineProcessor
     RX_Application*     m_app = nullptr;
     unsigned            m_lcore = 0;
     uint64_t            m_noFreeDesc = 0;
-    DPDK::CyclicStat    m_workStat;
+    DPDK::CyclicStat    m_procStat;
 
     PipelineProcessor(rte_ring *ring, RX_Application *app, unsigned lcore)
         : m_ring(ring), m_app(app), m_lcore(lcore)
