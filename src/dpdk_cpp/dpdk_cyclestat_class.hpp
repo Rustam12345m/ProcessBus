@@ -1,6 +1,6 @@
-#include "dpdk_clocks_class.hpp"
+#pragma once
 
-#include <ostream>
+#include "dpdk_clocks_class.hpp"
 
 namespace DPDK
 {
@@ -51,14 +51,6 @@ namespace DPDK
         }
         inline unsigned GetMinProcUS() const {
             return m_minProcUS;
-        }
-
-        friend std::ostream& operator<<(std::ostream &out, const CyclicStat &obj) {
-            out << "\tMin(process): " << obj.GetMinProcUS() << " us\n"
-                << "\tMax(process): " << obj.GetMaxProcUS() << " us\n"
-                << "\tLoad:         " << obj.GetLoadPerc() << " %\n"
-                << "\tWaiting:      " << obj.GetWaitPerc() << " %";
-            return out;
         }
 
     private:

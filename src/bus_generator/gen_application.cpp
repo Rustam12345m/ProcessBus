@@ -1,6 +1,8 @@
 #include "gen_application.hpp"
 
 #include "common/shared_defs.hpp"
+#include "common/console_tables.hpp"
+
 #include "dpdk_cpp/dpdk_port_class.hpp"
 #include "dpdk_cpp/dpdk_poolsetter_class.hpp"
 #include "dpdk_cpp/dpdk_mempool_class.hpp"
@@ -59,7 +61,7 @@ static void tx_packets_cycle(TxCycleConfig &conf, GenAppStat &stat, GenClass &ge
     }
     /* display_tx_units_info< typename GenClass::TxUnitArray >(txUnits); */
 
-    std::cout << "Start main loop\n";
+    std::cout << "\n\tStart main loop\n";
     /* set_thread_priority(DEF_GENERATOR_PRIORITY); */
 
     // Main cycle
@@ -158,10 +160,9 @@ GenApplication::GenApplication(int argc, char *argv[])
 
 void GenApplication::DisplayStatistic()
 {
-    std::cout << "\nProcessing statistics:\n"
-              << m_stat.procStat
-              << "\n\tCantSendCnt = " << m_stat.errSendCnt
-              << std::endl;
+    Console::CyclicStat::PrintTableHeader({"No-mbuf"});
+    Console::CyclicStat::PrintTableRow("Main", m_stat.procStat)
+                      << std::format(" {:<10} |\n", m_stat.errSendCnt);
 }
 
 void GenApplication::Run(StopVarType &doWork)
@@ -222,6 +223,10 @@ void GenApplication::Run(StopVarType &doWork)
     } else {
         std::cerr << "You have to specify GOOSE or SV to generate!\n";
     }
+
+    // Finish delimiter
+    std::cout << std::format("\n\n{:*<80}\n{:*^80}\n{:*<80}\n\n",
+                             "", " FINISH ", "");
 
     port.Stop();
     DisplayStatistic();

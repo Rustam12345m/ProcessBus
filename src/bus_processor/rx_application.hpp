@@ -49,6 +49,7 @@ public:
     RX_Application(int argc, char *argv[]);
 
     void DisplayStatistic(unsigned interval_sec);
+    void DisplayResults();
 
     void Run(StopVarType &doWork);
 

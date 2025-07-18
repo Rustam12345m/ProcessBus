@@ -57,7 +57,7 @@ void GooseTrafficGen::MakeSkeletonPacket(unsigned sigNum)
         .vlanPriority = 4,
         .vlanId = 0,
         .appId = 0x1234,
-        .dstAddress = { 0x01, 0x0C, 0xCD, 0x04, 0x00, 0x00 }
+        .dstAddress = { 0x01, 0x0C, 0xCD, 0x04, 0x00, 0x01 }
     };
 
     // Dataset items:

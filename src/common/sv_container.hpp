@@ -82,6 +82,9 @@ public:
         return *this;
     }
 
+    MAC             GetDMAC() const { 
+        return m_dmac;
+    }
     uint16_t        GetAppID() const {
         return m_appid;
     }
@@ -90,6 +93,12 @@ public:
     }
     uint32_t        GetCRev() const {
         return m_crev;
+    }
+    uint32_t        GetSmpCnt() const {
+        return m_smpCnt;
+    }
+    uint32_t        GetErrSeqNum() const {
+        return m_errSmpCnt;
     }
 
     SVStreamPassport GetPassport() const {
@@ -122,7 +131,6 @@ public:
             << "\tErrSeqCnt = " << obj.m_errSmpCnt << "\n";
         return out;
     }
-
 
 private:
     // Settings

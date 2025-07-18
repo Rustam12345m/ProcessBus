@@ -109,6 +109,9 @@ public:
         return *this;
     }
 
+    MAC             GetDMAC() const {
+        return m_dmac;
+    }
     uint16_t        GetAppID() const {
         return m_appid;
     }
@@ -124,6 +127,9 @@ public:
     uint32_t        GetCRev() const {
         return m_crev;
     }
+    uint32_t        GetErrSeqNum() const {
+        return m_errSeqCnt;
+    }
 
     GoosePassport   GetPassport() const {
         GoosePassport pass;
@@ -135,6 +141,13 @@ public:
         pass.dataset = m_dataSetRef;
         pass.gocbref = m_gocbRef;
         return pass;
+    }
+    GooseState      GetState() const {
+        GooseState st;
+        st.sqNum = m_sqNum;
+        st.stNum = m_stNum;
+        st.timestamp = 0;
+        return st;
     }
 
     void            ProcessState(const GoosePassport &pass,
