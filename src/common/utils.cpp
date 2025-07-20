@@ -30,21 +30,6 @@ void pin_thread_to_cpu(int cpu, int priority)
     pthread_setschedparam(thread, SCHED_FIFO, &param);
 }
 
-void display_packet_as_array(const uint8_t *packet, size_t packetSize)
-{
-    printf("const uint8_t packet[%zu] = {", packetSize);
-    for (size_t i = 0; i < packetSize; ++i) {
-        if (i % 16 == 0) {
-            printf("\n    ");
-        }
-        printf("0x%02X", packet[i]);
-        if (i < packetSize - 1) {
-            printf(", ");
-        }
-    }
-    printf("\n};\n");
-}
-
 int create_signalfd()
 {
     sigset_t mask;
@@ -74,5 +59,20 @@ int create_timerfd(int periodSec)
     its.it_value.tv_sec = periodSec;
     timerfd_settime(fd, 0, &its, NULL);
     return fd;
+}
+
+void display_packet_as_array(const uint8_t *packet, size_t packetSize)
+{
+    printf("const uint8_t packet[%zu] = {", packetSize);
+    for (size_t i = 0; i < packetSize; ++i) {
+        if (i % 16 == 0) {
+            printf("\n    ");
+        }
+        printf("0x%02X", packet[i]);
+        if (i < packetSize - 1) {
+            printf(", ");
+        }
+    }
+    printf("\n};\n");
 }
 
