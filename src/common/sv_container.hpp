@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mac_addr.hpp"
+#include "appid_container.hpp"
 
 #include <format>
 #include <iostream>
@@ -56,7 +57,7 @@ struct SVStreamState
     uint16_t smpCnt = 0;
 };
 
-class SVStreamSource
+class alignas(64) SVStreamSource
 {
 public:
     using ptr = std::shared_ptr< SVStreamSource >;
@@ -145,10 +146,14 @@ private:
     uint32_t    m_errSmpCnt = 0;
 };
 
+using SVContainer = AppIdContainer< SVStreamPassport, SVStreamSource::ptr >;
+
+#if 0
 using SVContainer = std::unordered_map<
                         SVStreamPassport,     /* Key type */
                         SVStreamSource::ptr,  /* Value type */
                         SVStreamPassport,     /* Custom hash operator */
                         SVStreamPassport      /* Custom equality operator */
                     >;
+#endif
 

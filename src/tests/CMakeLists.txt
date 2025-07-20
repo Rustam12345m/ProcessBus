@@ -12,6 +12,7 @@ add_executable(${TARGET_NAME}
 
     goose_traffic_test.cpp
     sv_traffic_test.cpp
+    appid_container_test.cpp
 
     main.cpp
 )

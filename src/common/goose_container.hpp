@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mac_addr.hpp"
+#include "appid_container.hpp"
 
 #include <unordered_map>
 #include <memory>
@@ -74,7 +75,7 @@ struct GooseState
  * @struct GooseSource
  * @brief
  */
-class GooseSource
+class alignas(64) GooseSource
 {
 public:
     using ptr = std::shared_ptr< GooseSource >;
@@ -185,10 +186,14 @@ private:
     uint32_t    m_errSeqCnt = 0;
 };
 
+using GooseContainer = AppIdContainer< GoosePassport, GooseSource::ptr >;
+
+#if 0
 using GooseContainer = std::unordered_map<
                            GoosePassport,      /* Key type */
                            GooseSource::ptr,   /* Value type */
                            GoosePassportHash,  /* Custom hash operator */
                            GoosePassportEqual  /* Custom equality operator */
                        >;
+#endif
 
