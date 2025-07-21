@@ -168,7 +168,7 @@ void GenApplication::DisplayStatistic()
 void GenApplication::Run(StopVarType &doWork)
 {
     // DPDK settings
-    const unsigned MBUF_NUM = 256 * 1024,
+    const unsigned MBUF_NUM = 512 * 1024,
                    CACHE_NUM = 64,
                    RX_DESC_NUM = 128,
                    TX_DESC_NUM = 63 * 1024;

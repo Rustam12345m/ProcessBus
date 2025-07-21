@@ -79,11 +79,9 @@ namespace
             if (rxNum > 0) {
                 procStat.MarkProcBegin();
 
-                matrix.stages[PBus::START_STAGE].num = rxNum;
-
                 // Processing pipeline
+                matrix.stages[PBus::START_STAGE].num = rxNum;
                 PBus::FramePipeline::run(matrix);
-
                 rte_pktmbuf_free_bulk(matrix.stages[PBus::START_STAGE].buf, rxNum);
 
                 procStat.MarkProcEnd();
@@ -378,7 +376,7 @@ void RX_Application::DisplayResults()
 void RX_Application::Run(StopVarType &doWork)
 {
     // DPDK settings
-    const unsigned MBUF_NUM = 512 * 1024,
+    const unsigned MBUF_NUM = 4 * 512 * 1024,
                    CACHE_NUM = 64,
                    RX_DESC_NUM = 63 * 1024,
                    TX_DESC_NUM = 128;
