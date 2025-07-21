@@ -82,13 +82,13 @@ Intel Atom
 
    | Metric | Min (µs) | Max (µs) | Load % | Wait % |
    |--------|----------|----------|--------|--------|
-   | Main   | 94       | 217      | 47.016 | 52.984 |
+   | Main   |12        | 85       | 15.169 | 84.831 |
 
    Bus Processor (Core 2):
 
    | Metric | Min (µs) | Max (µs) | Load %  | Wait %  |
    |--------|----------|----------|---------|---------|
-   | Main   | 0        | 94       | 70.686  | 29.314  |
+   | Main   | 0        | 63       | 35.541  | 64.459  |
 
    Observations:  
    Stream Integrity: no messages were lost after 5 minutes.
