@@ -1,5 +1,4 @@
 #include "process_bus_parser.hpp"
-#include <rte_byteorder.h>
 
 #include <iostream>
 
@@ -52,8 +51,9 @@ namespace
 #define NET_TO_CPU_U32(x)       RTE_STATIC_BSWAP32(*(uint32_t *)(x))
 #define NET_TO_CPU_U64(x)       RTE_STATIC_BSWAP64(*(uint64_t *)(x))
 
-int parse_goose_packet(const uint8_t *buffer, int size,
-                       GoosePassport &passport, GooseState &state)
+int ProcessBusParser::parse_goose_packet(const uint8_t *buffer, int size,
+                                         GoosePassport &passport,
+                                         GooseState &state)
 {
     if (size < 64) {
         return -1;
@@ -147,8 +147,9 @@ int parse_goose_packet(const uint8_t *buffer, int size,
     return (found_gocbref && found_dataset && found_goid) ? 0 : -100;
 }
 
-int parse_sv_packet(const uint8_t *buffer, int size,
-                    SVStreamPassport &passport, SVStreamState &state)
+int ProcessBusParser::parse_sv_packet(const uint8_t *buffer, int size,
+                                      SVStreamPassport &passport,
+                                      SVStreamState &state)
 {
     if (size < 64) {
         return -1;

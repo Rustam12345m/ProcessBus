@@ -8,25 +8,14 @@
 #include "dpdk_cpp/dpdk_cyclestat_class.hpp"
 #include "dpdk_cpp/dpdk_port_class.hpp"
 
-#include <vector>
-#include <memory>
-
 using StopVarType = volatile bool;
-
-enum BUS_PROTO
-{
-    NON_BUS_PROTO = 0,
-    BUS_PROTO_SV,
-    BUS_PROTO_GOOSE,
-    /* BUS_PROTO_PTP */
-};
 
 class RX_Application;
 
 /**
  * @brief Pipeline handler on each logical core in DPDK
  */
-struct PipelineProcessor
+struct LCoreProcessor
 {
     rte_ring*           m_ring = nullptr;
     RX_Application*     m_app = nullptr;
@@ -34,7 +23,7 @@ struct PipelineProcessor
     uint64_t            m_noFreeDesc = 0;
     DPDK::CyclicStat    m_procStat;
 
-    PipelineProcessor(rte_ring *ring, RX_Application *app, unsigned lcore)
+    LCoreProcessor(rte_ring *ring, RX_Application *app, unsigned lcore)
         : m_ring(ring), m_app(app), m_lcore(lcore)
     {}
 };

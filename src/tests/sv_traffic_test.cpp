@@ -102,14 +102,14 @@ TEST(SVFastParser, BasicUsage)
     SVStreamPassport passport;
     SVStreamState state;
 
-    int retval = parse_sv_packet(packet, size, passport, state);
+    int retval = ProcessBusParser::parse_sv_packet(packet, size, passport, state);
     ASSERT_NE(retval, 0);
 
     SVMakerByLib sv80;
     size = sv80.SetAppID(777)
                 .SetSVID("Test_SV_ID")
                 .MakePacket(packet);
-    retval = parse_sv_packet(packet, size, passport, state);
+    retval = ProcessBusParser::parse_sv_packet(packet, size, passport, state);
     ASSERT_EQ(retval, 0) << "Can't parse packet: Size = " << size;
     //std::cout << passport;
 
@@ -129,7 +129,7 @@ TEST(SVStreamContainer, BasicUsage)
     SVMakerByLib svByLib;
     SVStreamState state;
     size_t packetSize = svByLib.MakePacket(packet);
-    int retval = parse_sv_packet(packet, packetSize, passport, state);
+    int retval = ProcessBusParser::parse_sv_packet(packet, packetSize, passport, state);
     ASSERT_EQ(retval, 0) << passport;
 
     // SV 1

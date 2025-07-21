@@ -254,7 +254,7 @@ TEST(GooseFastParser, BasicUsage)
     GoosePassport passport;
     GooseState state;
 
-    int retval = parse_goose_packet(packet, size, passport, state);
+    int retval = ProcessBusParser::parse_goose_packet(packet, size, passport, state);
     ASSERT_NE(retval, 0);
 
     GooseMakerByLib goose;
@@ -265,7 +265,7 @@ TEST(GooseFastParser, BasicUsage)
                 .SetDataSet("DataSetName")
                 .SetCRev(123)
                 .MakePacket(packet);
-    retval = parse_goose_packet(packet, size, passport, state);
+    retval = ProcessBusParser::parse_goose_packet(packet, size, passport, state);
     ASSERT_EQ(retval, 0) << "Can't parse packet: Size = " << size;
 
     /* std::cout << passport; */
@@ -301,7 +301,7 @@ TEST(GooseFastParser, RealPacket)
     GoosePassport passport;
     GooseState state;
 
-    int retval = parse_goose_packet(packet, sizeof(packet), passport, state);
+    int retval = ProcessBusParser::parse_goose_packet(packet, sizeof(packet), passport, state);
     ASSERT_EQ(retval, 0);
 
     GooseParserByLib gooseLibPaser;
@@ -321,7 +321,7 @@ TEST(GooseContainer, BasicUsage)
     GooseMakerByLib goose;
     GooseState state;
     size_t packetSize = goose.MakePacket(packet);
-    int retval = parse_goose_packet(packet, packetSize, passport, state);
+    int retval = ProcessBusParser::parse_goose_packet(packet, packetSize, passport, state);
     ASSERT_EQ(retval, 0) << passport;
 
     // GOOSE 1

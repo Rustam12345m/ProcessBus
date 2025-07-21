@@ -5,263 +5,17 @@
 #include "dpdk_cpp/dpdk_mempool_class.hpp"
 #include "dpdk_cpp/dpdk_info_class.hpp"
 
-#include <rte_prefetch.h>
-
 #include "cxxopts.hpp"
-#include "process_bus_parser.hpp"
-#include "pipeline.hpp"
-
-/* #define OLD_VERSION */
-const unsigned  BURST_SIZE = 32;
+#include "pipeline_pbus.hpp"
 
 // TODO: Remove g_doWork
 extern volatile bool g_doWork;
 
 namespace 
 {
-    inline unsigned get_appid(const uint8_t* buffer)
-    {
-        return RTE_STATIC_BSWAP16(*(uint16_t *)(buffer + 18));
-    }
-
-    /**
-     * @function is_pbus_proto
-     * @brief Is used to get APPID and dispatch GOOSE/SV mbuf to a particular CPU
-     */
-    inline BUS_PROTO is_pbus_proto(const uint8_t* buffer, unsigned *appid)
-    {
-        if (buffer[12] == 0x81 && buffer[13] == 0x00) {
-            // VLAN
-            if (buffer[16] == 0x88 && buffer[17] == 0xBA) {
-                // SV
-                *appid = get_appid(buffer + 18);
-                return BUS_PROTO_SV;
-            }
-            if (buffer[16] == 0x88 && buffer[17] == 0xB8) {
-                // GOOSE
-                *appid = get_appid(buffer + 18);
-                return BUS_PROTO_GOOSE;
-            }
-        }
-        if (buffer[12] == 0x88 && buffer[13] == 0xBA) {
-            // SV without VLAN
-            *appid = get_appid(buffer + 14);
-            return BUS_PROTO_SV;
-        }
-        if (buffer[12] == 0x88 && buffer[13] == 0xB8) {
-            // GOOSE without VLAN
-            *appid = get_appid(buffer + 14);
-            return BUS_PROTO_GOOSE;
-        }
-        return NON_BUS_PROTO;
-    }
-
-    inline void pipeline(RX_Application &app, BUS_PROTO type,
-                         const uint8_t *packet, size_t size)
-    {
-        // TODO:
-        // - Pipeline style array of functions. Statically defined with X-macro
-        // - Statistics is used from diffo threads in app
-
-        switch (type) {
-        case BUS_PROTO_GOOSE: {
-            GoosePassport pass;
-            GooseState state;
-
-            int retval = parse_goose_packet(packet, size, pass, state);
-            if (retval == 0) {
-                auto src = app.m_gooseMap.find(pass);
-                if (src != app.m_gooseMap.end()) {
-                    src->second->ProcessState(pass, state);
-
-                    ++app.m_rxGoosePktCnt;
-                } else {
-                    ++app.m_rxUnknownGooseCnt;
-
-                    /*
-                    std::cout << "Received unknown GOOSE: " << retval << "\n"
-                              << "PacketLen = " << size << "\n"
-                              << pass
-                              << "\n"
-                              << state
-                              << std::endl;
-                    display_packet_as_array(packet, size);
-                    */
-                }
-            } else {
-                // Invalid GOOSE packet
-                ++app.m_errGooseParserCnt;
-            }
-            break;
-        }
-        case BUS_PROTO_SV: {
-            SVStreamPassport pass;
-            SVStreamState state;
-
-            int retval = parse_sv_packet(packet, size, pass, state);
-            if (retval == 0) {
-                auto src = app.m_svMap.find(pass);
-                if (src != app.m_svMap.end()) {
-                    src->second->ProcessState(pass, state);
-
-                    ++app.m_rxSVPktCnt;
-                } else {
-                    ++app.m_rxUnknownSVCnt;
-                }
-            } else {
-                ++app.m_errSVParserCnt;
-            }
-            break;
-        }
-        case NON_BUS_PROTO: {
-            break;
-        }
-        }
-    }
-}
-
-// pipeline
-namespace 
-{
-    enum SingleCoreStages
-    {
-        START_STAGE = 0,
-
-        ROUTER = 0,
-        GOOSE,
-        SV,
-        IP,
-
-        STAGE_NUM
-    };
-
-    template< typename TMatrix, unsigned TFrameIdx >
-    struct Router
-    {
-        static void ApplyTo(TMatrix& matrix) {
-            typename TMatrix::Frame &frame = matrix.stages[TFrameIdx];
-
-            for (unsigned i=0;i<frame.num;++i) {
-                /* rte_prefetch0(frame.buf[i]); */
-                const uint8_t *packet = rte_pktmbuf_mtod(frame.buf[i], const uint8_t *);
-
-                unsigned appid = 0;
-                BUS_PROTO type = is_pbus_proto(packet, &appid);
-                switch (type) {
-                case BUS_PROTO_SV: {
-                    matrix.stages[SV].PutBuffer(frame.buf[i]);
-                    break;
-                }
-                case BUS_PROTO_GOOSE: {
-                    matrix.stages[GOOSE].PutBuffer(frame.buf[i]);
-                    break;
-                }
-                default: {
-                    matrix.stages[IP].PutBuffer(frame.buf[i]);
-                    break;
-                }
-                }
-            }
-
-            //! Clean frame for the next cycle
-            frame.num = 0;
-        }
-    };
-
-    template< typename TMatrix, unsigned TFrameIdx >
-    struct GooseStage
-    {
-        static void ApplyTo(TMatrix &matrix) {
-            typename TMatrix::Frame &frame = matrix.stages[TFrameIdx];
-
-            RX_Application &app = *matrix.app;
-            for (unsigned i=0;i<frame.num;++i) {
-                const uint8_t *packet = rte_pktmbuf_mtod(frame.buf[i], const uint8_t *);
-                const unsigned size = rte_pktmbuf_pkt_len(frame.buf[i]);
-                
-                GoosePassport pass;
-                GooseState state;
-                int retval = parse_goose_packet(packet, size, pass, state);
-                if (retval == 0) {
-                    auto src = app.m_gooseMap.find(pass);
-                    if (src != app.m_gooseMap.end()) {
-                        src->second->ProcessState(pass, state);
-
-                        ++app.m_rxGoosePktCnt;
-                    } else {
-                        ++app.m_rxUnknownGooseCnt;
-                    }
-                } else {
-                    // Invalid GOOSE packet
-                    ++app.m_errGooseParserCnt;
-                }
-            }
-
-            //! Clean frame for the next cycle
-            frame.num = 0;
-        }
-    };
-
-    template< typename TMatrix, unsigned TFrameIdx >
-    struct SampledValuesStage
-    {
-        static void ApplyTo(TMatrix &matrix) {
-            typename TMatrix::Frame &frame = matrix.stages[TFrameIdx];
-
-            RX_Application &app = *matrix.app;
-            for (unsigned i=0;i<frame.num;++i) {
-                const uint8_t *packet = rte_pktmbuf_mtod(frame.buf[i], const uint8_t *);
-                const unsigned size = rte_pktmbuf_pkt_len(frame.buf[i]);
-
-                SVStreamPassport pass;
-                SVStreamState state;
-                int retval = parse_sv_packet(packet, size, pass, state);
-                if (retval == 0) {
-                    auto src = app.m_svMap.find(pass);
-                    if (src != app.m_svMap.end()) {
-                        src->second->ProcessState(pass, state);
-
-                        ++app.m_rxSVPktCnt;
-                    } else {
-                        ++app.m_rxUnknownSVCnt;
-                    }
-                } else {
-                    ++app.m_errSVParserCnt;
-                }
-            }
-
-            //! Clean frame for the next cycle
-            frame.num = 0;
-        }
-    };
-
-    template< typename TMatrix, unsigned TFrameIdx >
-    struct IPStage 
-    {
-        static void ApplyTo(TMatrix &matrix) {
-            typename TMatrix::Frame &frame = matrix.stages[TFrameIdx];
-
-            matrix.app->m_pktToKernelCnt += frame.num;
-
-            //! Clean frame for the next cycle
-            frame.num = 0;
-        }
-    };
-}
-
-using StagesMatrix = Pipeline::Matrix< SingleCoreStages,
-                                       Pipeline::Frame< rte_mbuf, BURST_SIZE >,
-                                       RX_Application >;
-using SingleCorePipeline = Pipeline::StaticChain< Router< StagesMatrix, ROUTER >,
-                                                  GooseStage< StagesMatrix, GOOSE >,
-                                                  SampledValuesStage< StagesMatrix, SV >,
-                                                  IPStage< StagesMatrix, IP > >;
-
-namespace
-{
     int lcore_processor(void *arg)
     {
-        PipelineProcessor *conf = reinterpret_cast< PipelineProcessor* >(arg);
+        LCoreProcessor *conf = reinterpret_cast< LCoreProcessor* >(arg);
         if (conf == nullptr) {
             g_doWork = false;
             std::cerr << "LCore: Config is NULL!" << std::endl;
@@ -273,50 +27,27 @@ namespace
         ASM_MARKER(lcore_processing);
 
         // Pipeline definition
-        StagesMatrix matrix(conf->m_app);
+        PBus::DataMatrix matrix(conf->m_app);
 
-        rte_mbuf *bufs[BURST_SIZE] = {};
         conf->m_procStat.MarkStartCycling();
         while (g_doWork) {
-        #ifndef OLD_VERSION
             uint16_t rxNum = rte_ring_sc_dequeue_burst(conf->m_ring,
-                                                       (void **)matrix.stages[START_STAGE].buf,
-                                                       BURST_SIZE,
+                                                       (void **)matrix.stages[PBus::START_STAGE].buf,
+                                                       RX_BURST_SIZE,
                                                        nullptr);
             if (rxNum > 0) {
                 conf->m_procStat.MarkProcBegin();
 
                 // Processing pipeline
-                matrix.stages[START_STAGE].num = rxNum;
-                SingleCorePipeline::run(matrix);
-                rte_pktmbuf_free_bulk(matrix.stages[START_STAGE].buf, rxNum);
+                matrix.stages[PBus::START_STAGE].num = rxNum;
+                PBus::FramePipeline::run(matrix);
+                rte_pktmbuf_free_bulk(matrix.stages[PBus::START_STAGE].buf, rxNum);
 
                 conf->m_procStat.MarkProcEnd();
             }
-        #else
-            uint16_t rxNum = rte_ring_sc_dequeue_burst(conf->m_ring,
-                                                       (void **)bufs,
-                                                       BURST_SIZE,
-                                                       nullptr);
-            if (rxNum > 0) {
-                conf->m_procStat.MarkProcBegin();
-
-                for (uint16_t i=0;i<rxNum;++i) {
-                    const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
-                    const unsigned packetSize = rte_pktmbuf_pkt_len(bufs[i]);
-
-                    unsigned appid = 0;
-                    BUS_PROTO bt = is_pbus_proto(packet, &appid);
-
-                    pipeline(*conf->m_app, bt, packet, packetSize);
-                }
-                rte_pktmbuf_free_bulk(bufs, rxNum);
-
-                conf->m_procStat.MarkProcEnd();
-            }
-        #endif
         }
         conf->m_procStat.MarkFinishCycling();
+
         return 0;
     }
 
@@ -336,55 +67,27 @@ namespace
         ASM_MARKER(signle_core_processing);
 
         // Pipeline definition
-        StagesMatrix matrix(&app);
+        PBus::DataMatrix matrix(&app);
 
         // Main cycle
         DPDK::CyclicStat procStat;
         procStat.MarkStartCycling();
-        rte_mbuf* bufs[BURST_SIZE] = { 0 };
         while (g_doWork) {
-        #ifndef OLD_VERSION
-            uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, matrix.stages[START_STAGE].buf, BURST_SIZE);
+            uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id,
+                                              matrix.stages[PBus::START_STAGE].buf,
+                                              RX_BURST_SIZE);
             if (rxNum > 0) {
                 procStat.MarkProcBegin();
 
-                matrix.stages[START_STAGE].num = rxNum;
+                matrix.stages[PBus::START_STAGE].num = rxNum;
 
                 // Processing pipeline
-                SingleCorePipeline::run(matrix);
+                PBus::FramePipeline::run(matrix);
 
-                rte_pktmbuf_free_bulk(matrix.stages[START_STAGE].buf, rxNum);
-
-                procStat.MarkProcEnd();
-            }
-        #else
-            uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, bufs, BURST_SIZE);
-            if (rxNum > 0) {
-                procStat.MarkProcBegin();
-
-                for (unsigned i=0;i<rxNum;++i) {
-                    const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
-
-                    unsigned appid = 0;
-                    BUS_PROTO bt = is_pbus_proto(packet, &appid);
-                    switch (bt) {
-                    case NON_BUS_PROTO: {
-                        // TODO: Dispatch to: Thread - Kernel(TAP)
-                        ++app.m_pktToKernelCnt;
-                        break;
-                    }
-                    case BUS_PROTO_SV:
-                    case BUS_PROTO_GOOSE: {
-                        pipeline(app, bt, packet, rte_pktmbuf_pkt_len(bufs[i]));
-                        break;
-                    }
-                    }
-                    rte_pktmbuf_free(bufs[i]);
-                }
+                rte_pktmbuf_free_bulk(matrix.stages[PBus::START_STAGE].buf, rxNum);
 
                 procStat.MarkProcEnd();
             }
-        #endif
         }
         procStat.MarkFinishCycling();
 
@@ -397,13 +100,13 @@ namespace
         Console::CyclicStat::PrintTableRow("Main", procStat) << "\n";
     }
 
-    void multi_core(RX_Application &app, DPDK::Port &eth, uint16_t queue_id)
+    void multi_core_rss(RX_Application &app, DPDK::Port &eth, uint16_t queue_id)
     {
         const unsigned WORKER_RING_SIZE = 16 * 1024;
 
         // Pipeline workers
-        std::vector< PipelineProcessor > pipelineWorker;
-        pipelineWorker.reserve(rte_lcore_count());
+        std::vector< LCoreProcessor > lcoreWorker;
+        lcoreWorker.reserve(rte_lcore_count());
 
         unsigned lcore = 0, wIndex = 0;
         RTE_LCORE_FOREACH_WORKER(lcore) {
@@ -413,14 +116,14 @@ namespace
                                              rte_socket_id(),
                                              RING_F_SP_ENQ | RING_F_SC_DEQ);
             if (ring == nullptr) {
-                throw std::runtime_error("Can't create ring for pipelineWorker: " + ringName);
+                throw std::runtime_error("Can't create ring for lcoreWorker: " + ringName);
             }
 
-            pipelineWorker.push_back(PipelineProcessor(ring, &app, lcore));
-            rte_eal_remote_launch(lcore_processor, &pipelineWorker[wIndex], lcore);
+            lcoreWorker.push_back(LCoreProcessor(ring, &app, lcore));
+            rte_eal_remote_launch(lcore_processor, &lcoreWorker[wIndex], lcore);
             ++wIndex;
         }
-        const unsigned workerNum = pipelineWorker.size();
+        const unsigned workerNum = lcoreWorker.size();
 
         // Start NIC port
         eth.SetAllMulticast();
@@ -436,7 +139,7 @@ namespace
 
         // Workers' queues
         struct {
-            rte_mbuf* buff[BURST_SIZE] = {};
+            rte_mbuf* buff[RX_BURST_SIZE] = {};
             unsigned  num = 0;
 
             inline void Put(rte_mbuf *buf) {
@@ -448,23 +151,24 @@ namespace
         // Main cycle
         DPDK::CyclicStat procStat;
         procStat.MarkStartCycling();
-        rte_mbuf* bufs[BURST_SIZE] = { 0 };
+        rte_mbuf* bufs[RX_BURST_SIZE] = { 0 };
         while (g_doWork) {
-            uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, bufs, BURST_SIZE);
+            uint16_t rxNum = rte_eth_rx_burst(eth.GetID(), queue_id, bufs, RX_BURST_SIZE);
             if (rxNum > 0) {
                 procStat.MarkProcBegin();
 
                 for (unsigned i=0;i<rxNum;++i) {
+                    /* rte_prefetch0(bufs[i]); */
                     const uint8_t *packet = rte_pktmbuf_mtod(bufs[i], const uint8_t *);
 
-                    unsigned appid = get_appid(packet);
+                    unsigned appid = ProcessBusParser::get_appid(packet);
                     unsigned idx = appid & (workerNum - 1);
 
                     workerQueue[idx].Put(bufs[i]);
                 }
                 for (unsigned i=0;i<workerNum;++i) {
                     if (workerQueue[i].num > 0) {
-                        rte_ring_sp_enqueue_burst(pipelineWorker[i].m_ring,
+                        rte_ring_sp_enqueue_burst(lcoreWorker[i].m_ring,
                                                   (void * const *)workerQueue[i].buff,
                                                   workerQueue[i].num,
                                                   NULL);
@@ -484,7 +188,7 @@ namespace
         // Display processing time
         Console::CyclicStat::PrintTableHeader();
         Console::CyclicStat::PrintTableRow("Main", procStat) << "\n";
-        for (const auto &w : pipelineWorker) {
+        for (const auto &w : lcoreWorker) {
             Console::CyclicStat::PrintTableRow("LCore" + std::to_string(w.m_lcore), w.m_procStat) << "\n";
         }
     }
@@ -710,7 +414,7 @@ void RX_Application::Run(StopVarType &doWork)
     }
     default: {
         // Software RSS
-        multi_core(*this, eth, queue_id);
+        multi_core_rss(*this, eth, queue_id);
         break;
     }
     }
